@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "Tailor Management System",
+    "slug": "tailor-management-system",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#0f172a",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "backgroundColor": "#0f172a",
+      "resizeMode": "contain"
+    },
+    "scheme": "tailormanagementsystem",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "enabled": true,
+      "url": "https://u.expo.dev/REPLACE-WITH-YOUR-EAS-PROJECT-ID",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
+    "assetBundlePatterns": [
+      "**"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.pashtodevzone.tailormanagementsystem",
+      "icon": "./assets/icon.png",
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "backgroundColor": "#0f172a"
+      }
+    },
+    "android": {
+      "package": "com.pashtodevzone.tailormanagementsystem",
+      "versionCode": 10000,
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundImage": "./assets/adaptive-icon-bg.png",
+        "monochromeImage": "./assets/adaptive-icon.png"
+      },
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "backgroundColor": "#0f172a",
+        "resizeMode": "contain"
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "extra": {
+      "apiVersion": "1.0.0",
+      "eas": {
+        "projectId": "REPLACE-WITH-YOUR-EAS-PROJECT-ID"
+      }
+    },
+    "plugins": [
+      "expo-font"
+    ]
+  }
+}

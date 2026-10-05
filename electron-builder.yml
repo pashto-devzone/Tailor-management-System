@@ -1,0 +1,62 @@
+appId: "com.growthgrid.tailor-management-system"
+productName: "Tailor Management System"
+
+directories:
+  output: dist
+
+files:
+  - "electron/**"
+  - "Backend/**"
+  # Never ship SQLite artifacts or example env into the packaged app.
+  # PostgreSQL/Supabase is the only database in production.
+  - "!Backend/database/**"
+  - "!Backend/**/*.log"
+  - "!Backend/.env.example"
+
+  # Frontend runtime
+  - "Frontend/dist/**"
+  - "Frontend/dist/index.html"
+
+  # Minimal app package.json for production dependency resolution
+  - "package.json"
+  # Include .env in Backend (gitignored but needed by server-side backend)
+  - "Backend/.env"
+
+# Keep backend entry and config available outside ASAR
+asarUnpack:
+  - "Backend/**"
+
+win:
+  target:
+    - nsis
+  icon: "electron/assets/icon.ico"
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  uninstallDisplayName: "Tailor Management System"
+
+# GitHub Releases - automatic update source
+publish:
+  provider: github
+  owner: pashto-devzone
+  repo: pashto-devzone
+  releaseType: release
+
+extraResources:
+  # Backend files
+  - from: "./Backend"
+    to: "Backend"
+    filter:
+      - "**/*"
+      - "!.env.example"
+      - "!node_modules/.cache/**"
+      - "!node_modules/nodemon/**"
+      - "!database/**"
+      - "!*.log"
+
+  # Keep application icon available
+  - from: "electron/assets/icon.ico"
+    to: "electron/assets"

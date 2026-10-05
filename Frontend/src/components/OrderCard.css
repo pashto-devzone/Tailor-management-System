@@ -1,0 +1,58 @@
+
+
+.order-card {
+  overflow: hidden;
+  justify-content: space-between;
+}
+
+.order-card__row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.order-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 10px;
+  overflow: hidden;
+}
+
+.order-action__text {
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+/* Compact action buttons (Task 2) */
+.order-actions .order-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.order-actions .order-action svg {
+  width: 14px;
+  height: 14px;
+}
+
+@media (max-width: 900px) {
+  .order-actions {
+    gap: 4px;
+  }
+
+  .order-actions .order-action {
+    padding: 0 8px;
+    font-size: 11px;
+  }
+
+  .order-action__text {
+    margin-left: 4px;
+  }
+}
+
+

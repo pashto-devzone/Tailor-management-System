@@ -1,0 +1,83 @@
+# Dependencies
+node_modules/
+Frontend/node_modules/
+Backend/node_modules/
+.kilo/node_modules/
+
+# Build outputs
+dist/
+Frontend/dist/
+Frontend/build/
+out/
+
+# Electron
+release/
+*.exe
+*.msi
+*.nsh
+
+# NOTE: electron-builder.yml must stay tracked - it is required to build the
+# desktop installer. Only ignore generated copies inside build output.
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+tailor.db
+
+# PostgreSQL local/backup artifacts
+*.dump
+*.sql.gz
+
+# Backups
+backups/
+*.zip
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Environment
+# Real credentials never belong in version control. Backend/.env is packaged
+# into the desktop app by electron-builder (see electron-builder.yml), which is
+# a build-time behaviour independent of these ignore rules.
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+# Logs and temporary local output
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tmp
+
+# Local tool/editor caches
+.expo/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Git
+.git/
+
+# Android generated export/check output
+Android/dist-android-check/
+
+# Android generated export/check output
+Android/dist-android-check/

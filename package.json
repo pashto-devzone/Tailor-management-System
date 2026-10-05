@@ -1,0 +1,26 @@
+{
+  "name": "tailor-management-system-desktop",
+  "version": "1.5.1",
+  "private": true,
+  "main": "electron/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pashto-devzone/pashto-devzone.git"
+  },
+  "scripts": {
+    "electron-dev": "node electron/run.js .",
+    "electron": "node electron/run.js .",
+    "build-electron": "electron-builder --win"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "electron": "^32.3.3",
+    "electron-builder": "^25.1.8",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "expo": "^57.0.25"
+  }
+}
