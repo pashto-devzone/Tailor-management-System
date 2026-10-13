@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
 import { useNavigate, Link } from "react-router-dom";
-import { handleApiError } from "../services/api";
+import { handleApiError, requestPasswordReset } from "../services/api";
 
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [forgotMode, setForgotMode] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState("");
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -24,6 +26,16 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleForgotPassword = async (event) => {
+    event.preventDefault(); setError(""); setRecoveryMessage(""); setLoading(true);
+    try {
+      const response = await requestPasswordReset(email);
+      setRecoveryMessage(response.data?.message || "If an account exists for that email, a recovery link has been sent.");
+    } catch (err) {
+      setError(err?.response?.data?.message || "Unable to request password recovery.");
+    } finally { setLoading(false); }
   };
 
   return (
@@ -53,7 +65,7 @@ export default function Login() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+        <form onSubmit={forgotMode ? handleForgotPassword : handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
           <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Email</span>
             <input
@@ -68,7 +80,7 @@ export default function Login() {
             />
           </label>
 
-          <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {!forgotMode && <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Password</span>
             <input
               type="password"
@@ -80,12 +92,19 @@ export default function Login() {
               autoComplete="current-password"
               style={{ width: "100%", padding: "0.75rem 1rem", borderRadius: 12, border: "1px solid var(--border)" }}
             />
-          </label>
+          </label>}
 
           <button type="submit" className="button primary" disabled={loading} style={{ marginTop: "0.5rem" }}>
-            {loading ? "Logging in..." : "Login"}
+            {loading ? "Please wait..." : forgotMode ? "Send Recovery Link" : "Login"}
           </button>
         </form>
+
+        {recoveryMessage && <p className="message success" role="status">{recoveryMessage}</p>}
+        <p style={{ margin: "1rem 0 0", textAlign: "center", fontSize: "0.9rem" }}>
+          <button type="button" className="text-button" onClick={() => { setForgotMode((value) => !value); setError(""); setRecoveryMessage(""); }}>
+            {forgotMode ? "Back to Login" : "Forgot Password?"}
+          </button>
+        </p>
 
         <p style={{ marginTop: "1.5rem", textAlign: "center", fontSize: "0.9rem", color: "var(--muted)" }}>
           Account nahi hai?{" "}

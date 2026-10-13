@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   getCustomers,
   getOrdersByCustomerId,
@@ -93,6 +93,15 @@ export default function Customers() {
   const [measurementMode, setMeasurementMode] = useState("update");
   const [measurementRecord, setMeasurementRecord] = useState(null);
   const [measurementSaving, setMeasurementSaving] = useState(false);
+  const [garmentChoiceOpen, setGarmentChoiceOpen] = useState(false);
+  const [garmentAction, setGarmentAction] = useState("print");
+  const [selectedGarment, setSelectedGarment] = useState("");
+  const garmentTypes = [
+    ["shalwar kameez", "Shalwar Qameez"],
+    ["waistcoat", "Waist Coat"],
+    ["coat", "Coat"],
+    ["sherwani", "Sherwani"],
+  ];
 
   // Measurement preview modal
   const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
@@ -102,26 +111,77 @@ export default function Customers() {
 
   const { shop } = useShop();
   const [settings, setSettings] = useState(null);
+  const customerLoadId = useRef(0);
+  const currentCustomerId = useRef(null);
+
+  const closeCustomerSummary = () => {
+    customerLoadId.current += 1;
+    currentCustomerId.current = null;
+    setSelectedCustomer(null);
+    setCustomerOrders([]);
+    setMeasurements([]);
+  };
 
 
 
 
 
-  const handleMeasurementPrintPreview = () => {
-    // REQUIRED flow (same logic as Measurements.jsx): set preview measurement + preview customer + open MeasurementPreviewModal.
-    if (!selectedCustomer || !selectedMeasurementsLatest) return;
-
-    const latestMeasurement = selectedMeasurementsLatest;
-
-    setPrintLoading(true);
+  const beginGarmentAction = async (action) => {
+    if (!selectedCustomer?.id) return;
+    const customerId = selectedCustomer.id;
+    setGarmentAction(action);
+    setSelectedGarment("");
+    setMeasurementsLoading(true);
+    setError("");
     try {
-      setPrintMeasurementForPreview(latestMeasurement);
-      setPrintCustomerForPreview(selectedCustomer);
-      setPrintPreviewOpen(true);
+      const response = await getMeasurements(customerId);
+      if (String(currentCustomerId.current) !== String(customerId)) return;
+      setMeasurements(Array.isArray(response.data) ? response.data : []);
+      setGarmentChoiceOpen(true);
+    } catch (err) {
+      if (String(currentCustomerId.current) === String(customerId)) setError(err.response?.data?.message || "Unable to refresh garment availability.");
+    } finally {
+      if (String(currentCustomerId.current) === String(customerId)) setMeasurementsLoading(false);
+    }
+  };
+
+  const chooseGarment = async () => {
+    if (!selectedCustomer || !selectedGarment) return;
+    setPrintLoading(true);
+    setError("");
+    try {
+      // Query with both customer ID and garment type to avoid stale or cross-garment data.
+      const response = await getMeasurements(selectedCustomer.id, selectedGarment);
+      if (String(currentCustomerId.current) !== String(selectedCustomer.id)) return;
+      const records = Array.isArray(response.data) ? response.data : [];
+      const key = (value) => String(value || "").toLowerCase().replace(/[^a-z]/g, "");
+      const match = records.find((record) => key(record.dress_type) === key(selectedGarment));
+      setGarmentChoiceOpen(false);
+      if (!match) {
+        const label = garmentTypes.find(([type]) => type === selectedGarment)?.[1] || selectedGarment;
+        const create = window.confirm(`No ${label} measurements are saved for this customer. Add measurements for ${label} now?`);
+        if (!create) return;
+        setMeasurementRecord(null);
+        setMeasurementMode("add");
+        setMeasurementModalOpen(true);
+        return;
+      }
+      setMeasurements((previous) => [match, ...previous.filter((item) => String(item.id) !== String(match.id))]);
+      if (garmentAction === "edit") {
+        setMeasurementRecord(match);
+        setMeasurementMode("update");
+        setMeasurementModalOpen(true);
+      } else {
+        setPrintMeasurementForPreview(match);
+        setPrintCustomerForPreview(selectedCustomer);
+        setPrintPreviewOpen(true);
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to load the selected garment measurements.");
     } finally {
       setPrintLoading(false);
     }
-  }; 
+  };
 
 
 
@@ -192,7 +252,9 @@ export default function Customers() {
   }, [customerOrders]);
 
   const loadCustomerOrdersAndMeasurements = useCallback(async (customer) => {
+    const loadId = ++customerLoadId.current;
     if (!customer) {
+      currentCustomerId.current = null;
       setSelectedCustomer(null);
       setCustomerOrders([]);
       setMeasurements([]);
@@ -200,6 +262,7 @@ export default function Customers() {
     }
 
     setSelectedCustomer(customer);
+    currentCustomerId.current = customer.id;
     setError("");
     setMessage("");
 
@@ -213,13 +276,17 @@ export default function Customers() {
         getMeasurements(customer.id),
       ]);
 
+      if (loadId !== customerLoadId.current) return;
       setCustomerOrders(Array.isArray(ordersRes.data) ? ordersRes.data : []);
       setMeasurements(Array.isArray(measurementsRes.data) ? measurementsRes.data : []);
     } catch (err) {
+      if (loadId !== customerLoadId.current) return;
       setError(err.response?.data?.message || "Unable to load customer data.");
     } finally {
-      setCustomerOrderLoading(false);
-      setMeasurementsLoading(false);
+      if (loadId === customerLoadId.current) {
+        setCustomerOrderLoading(false);
+        setMeasurementsLoading(false);
+      }
     }
   }, []);
 
@@ -255,6 +322,7 @@ export default function Customers() {
       await loadCustomers();
       if (selectedCustomer?.id === id) {
         setSelectedCustomer(null);
+      currentCustomerId.current = null;
         setCustomerOrders([]);
         setMeasurements([]);
       }
@@ -333,17 +401,26 @@ export default function Customers() {
     setMeasurementSaving(true);
 
     try {
-      const { comments = "", measurements: payloadMeasurements = null } = data || {};
+      const { customer_id, comments = "", measurements: payloadMeasurements = null, dress_type } = data || {};
+      if (String(customer_id) !== String(selectedCustomer.id) || !dress_type) {
+        throw new Error("Customer and garment context is missing. Reopen the measurement from the customer card.");
+      }
+      const normalizeGarment = (value) => String(value || "").toLowerCase().replace(/[^a-z]/g, "");
       const normalizedPayload = payloadMeasurements || {};
 
       if (measurementMode === "update" && measurementRecord?.id) {
+        if (String(measurementRecord.customer_id) !== String(selectedCustomer.id) || normalizeGarment(measurementRecord.dress_type) !== normalizeGarment(dress_type)) {
+          throw new Error("The selected measurement changed. Reload the customer and garment before saving.");
+        }
         await updateMeasurement(measurementRecord.id, {
           measurements: normalizedPayload,
           comments,
+          dress_type,
         });
       } else {
         await addMeasurements({
           customer_id: selectedCustomer.id,
+          dress_type,
           measurements: normalizedPayload,
           comments,
         });
@@ -450,11 +527,11 @@ export default function Customers() {
       {selectedCustomer && (
         <div
           className="modal-backdrop"
-          onClick={() => setSelectedCustomer(null)}
+          onClick={closeCustomerSummary}
           role="presentation"
         >
           <div
-            className="modal-card"
+            className="modal-card customer-summary-dialog"
             onClick={(e) => e.stopPropagation()}
             style={{ maxWidth: 560 }}
             role="dialog"
@@ -465,14 +542,14 @@ export default function Customers() {
               <button
                 type="button"
                 className="icon-button"
-                onClick={() => setSelectedCustomer(null)}
+                onClick={closeCustomerSummary}
                 aria-label="Close"
               >
                 ✕
               </button>
             </div>
 
-            <div style={{ padding: "0.5rem 0.75rem 0.75rem" }}>
+              <div className="customer-summary-content" style={{ padding: "0.5rem 0.75rem 0.75rem" }}>
               <div style={{ display: "grid", gap: 10 }}>
 
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
@@ -533,10 +610,9 @@ export default function Customers() {
 
                 <div style={{ display: "grid", gap: 8, marginTop: 2 }}>
 
-                  {selectedMeasurementsLatest ? (
-                    <>
+                  <>
                       <div style={{ fontWeight: 700, color: "var(--muted)", fontSize: 13 }}>
-                        Measurements available
+                        {measurements.length ? "Measurements available" : "No saved measurements yet"}
                       </div>
                       {/* Buttons only here (no duplicates) */}
                       <div
@@ -549,12 +625,10 @@ export default function Customers() {
                         <button
                           type="button"
                           className="button secondary"
-                          onClick={() => {
-                            handleMeasurementPrintPreview();
-                          }}
+                          onClick={() => beginGarmentAction("print")}
                           disabled={customerOrderLoading || measurementsLoading || printLoading}
                         >
-                          {printLoading ? "Preparing..." : "Print Measurement"}
+                          {printLoading ? "Preparing..." : "Print Measurements"}
                         </button>
 
                         <button
@@ -567,9 +641,9 @@ export default function Customers() {
                         <button
                           type="button"
                           className="button secondary"
-                          onClick={openMeasurementsEdit}
+                          onClick={() => beginGarmentAction("edit")}
                         >
-                          Edit Measurement
+                          Edit Measurements
                         </button>
 
                         <button
@@ -580,31 +654,7 @@ export default function Customers() {
                           Delete Customer
                         </button>
                       </div>
-                    </>
-                  ) : (
-                    <>
-                      <div className="message error">No measurement available for this customer.</div>
-                      <button
-                        type="button"
-                        className="button primary"
-                        onClick={() => {
-                          setMeasurementRecord(null);
-                          setMeasurementMode("add");
-                          setMeasurementModalOpen(true);
-                        }}
-                      >
-                        Add Measurement
-                      </button>
-
-                      <button
-                        type="button"
-                        className="button secondary"
-                        onClick={openEditCustomer}
-                      >
-                        Edit Customer
-                      </button>
-                    </>
-                  )}
+                  </>
                 </div>
 
               </div>
@@ -716,27 +766,52 @@ export default function Customers() {
       )}
 
       {/* Universal Measurement Preview Modal */}
-      {printPreviewOpen && selectedCustomer && printMeasurementForPreview && (
+      {printPreviewOpen && printCustomerForPreview && printMeasurementForPreview && (
         <MeasurementPreviewModal
           open={printPreviewOpen}
           shop={shop}
           settings={settings}
-          customer={selectedCustomer}
+          customer={printCustomerForPreview}
           measurement={printMeasurementForPreview}
+          order={customerOrders.find((item) => String(item.customer_id) === String(printCustomerForPreview.id) && String(item.dress_type || "").toLowerCase().replace(/\s+/g, "") === String(printMeasurementForPreview.dress_type || "shalwar kameez").toLowerCase().replace(/\s+/g, "")) || null}
 
           onCancel={closePrintPreview}
           onEditMeasurement={() => {
-            // Must open existing measurement edit modal
             closePrintPreview();
-            openMeasurementsEdit();
+            setMeasurementRecord(printMeasurementForPreview);
+            setMeasurementMode("update");
+            setMeasurementModalOpen(true);
           }}
           onPrintMeasurement={() => {
-            // Print exactly the preview shown
-            window.print();
             closePrintPreview();
           }}
           isPrintingDisabled={printLoading}
         />
+      )}
+
+      {garmentChoiceOpen && selectedCustomer && (
+        <div className="modal-backdrop" onClick={() => setGarmentChoiceOpen(false)}>
+          <div className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()} style={{ maxWidth: 480 }}>
+            <div className="modal-header"><h3>{garmentAction === "print" ? "Choose garment to print" : "Choose garment to edit"}</h3>
+              <button type="button" className="icon-button" onClick={() => setGarmentChoiceOpen(false)} aria-label="Close">×</button>
+            </div>
+            <p>Select which garment’s measurements you want to {garmentAction}.</p>
+            <div className="garment-choice-options" role="radiogroup" aria-label="Garment type">
+              {garmentTypes.map(([type, label]) => {
+                const hasSaved = measurements.some((item) => String(item.dress_type || "").toLowerCase().replace(/[^a-z]/g, "") === type.replace(/[^a-z]/g, ""));
+                return <label className="garment-choice-option" key={type}>
+                  <input type="radio" name="customer-measurement-garment" value={type} checked={selectedGarment === type} onChange={() => setSelectedGarment(type)} />
+                  <span className="garment-choice-label">{label}</span>
+                  <small className="garment-choice-status">{hasSaved ? "Available — measurements exist" : "Not Added — no measurements exist"}</small>
+                </label>;
+              })}
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="button secondary" onClick={() => setGarmentChoiceOpen(false)}>Cancel</button>
+              <button type="button" className="button primary" disabled={!selectedGarment || printLoading} onClick={chooseGarment}>{printLoading ? "Loading…" : "Continue"}</button>
+            </div>
+          </div>
+        </div>
       )}
 
 
@@ -749,6 +824,7 @@ export default function Customers() {
         customer={selectedCustomer}
         customers={customers}
         mode={measurementMode}
+        dressType={selectedGarment || measurementRecord?.dress_type || ""}
         initialData={measurementRecord}
         loading={measurementSaving}
         error={error}

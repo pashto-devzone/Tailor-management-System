@@ -11,6 +11,7 @@ import Settings from "./pages/Settings.jsx";
 import UpdateNotification from "./components/UpdateNotification.jsx";
 import Login from "./pages/Login.jsx";
 import Register from "./pages/Register.jsx";
+import ResetPassword from "./pages/ResetPassword.jsx";
 import { useAuth } from "./contexts/AuthContext.jsx";
 import { useShop } from "./contexts/ShopContext.jsx";
 import { getShopInfo } from "./services/api";
@@ -68,6 +69,7 @@ export default function App() {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     );
@@ -97,6 +99,7 @@ export default function App() {
           <Route path="/setup" element={<Navigate to="/dashboard" replace />} />
           <Route path="/login" element={<Navigate to="/dashboard" replace />} />
           <Route path="/register" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="*" element={<Navigate to="/dashboard" />} />
         </Routes>
       </main>

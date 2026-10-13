@@ -13,6 +13,7 @@ import { useShop } from "../contexts/ShopContext";
 import { useAuth } from "../contexts/AuthContext";
 import { FaSignOutAlt } from "react-icons/fa";
 import { FaChevronDown } from "react-icons/fa";
+import { changePassword } from "../services/api";
 
 
 const initialForm = {
@@ -460,6 +461,28 @@ function AccountSection() {
   const { user, logout } = useAuth();
   const { shop } = useShop();
   const [loggingOut, setLoggingOut] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordSaving, setPasswordSaving] = useState(false);
+
+  const handlePasswordChange = async (event) => {
+    event.preventDefault();
+    setPasswordMessage("");
+    setPasswordError("");
+    if (newPassword.length < 6) return setPasswordError("New password must be at least 6 characters.");
+    if (newPassword !== confirmPassword) return setPasswordError("New password and confirmation do not match.");
+    setPasswordSaving(true);
+    try {
+      await changePassword(currentPassword, newPassword);
+      setPasswordMessage("Password updated successfully. Other signed-in sessions have been logged out.");
+      setCurrentPassword(""); setNewPassword(""); setConfirmPassword("");
+    } catch (error) {
+      setPasswordError(error.response?.data?.message || "Password update failed.");
+    } finally { setPasswordSaving(false); }
+  };
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -475,15 +498,15 @@ function AccountSection() {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
         <div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 2 }}>Name</div>
-          <div style={{ fontWeight: 600 }}>{user.name || "-"}</div>
+          <div style={{ fontWeight: 600 }}>{user.user?.name || "-"}</div>
         </div>
         <div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 2 }}>Email</div>
-          <div style={{ fontWeight: 600, direction: "ltr", textAlign: "left" }}>{user.email}</div>
+          <div style={{ fontWeight: 600, direction: "ltr", textAlign: "left" }}>{user.user?.email || "-"}</div>
         </div>
         <div>
           <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 2 }}>Role</div>
-          <div style={{ fontWeight: 600, textTransform: "capitalize" }}>{user.role}</div>
+          <div style={{ fontWeight: 600, textTransform: "capitalize" }}>{user.user?.role || "-"}</div>
         </div>
         {shop && (
           <div>
@@ -492,6 +515,16 @@ function AccountSection() {
           </div>
         )}
       </div>
+
+      <form onSubmit={handlePasswordChange} style={{ display: "grid", gap: 10, maxWidth: 480 }}>
+        <h4 style={{ margin: "8px 0 0" }}>Change Password</h4>
+        <label className="form-field"><span>Current password</span><input type="password" autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></label>
+        <label className="form-field"><span>New password</span><input type="password" autoComplete="new-password" minLength={6} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></label>
+        <label className="form-field"><span>Confirm new password</span><input type="password" autoComplete="new-password" minLength={6} required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></label>
+        {passwordMessage && <p className="message success">{passwordMessage}</p>}
+        {passwordError && <p className="message error">{passwordError}</p>}
+        <button type="submit" className="button primary" disabled={passwordSaving}>{passwordSaving ? "Updating..." : "Update Password"}</button>
+      </form>
 
       <div style={{ display: "flex", justifyContent: "flex-end" }}>
         <button className="button secondary" onClick={handleLogout} disabled={loggingOut}>

@@ -17,15 +17,15 @@ async function backfillMissingOrderNumbers(storeId = 1) {
 
 exports.createOrder = async (data) => {
   const {
-    order_number, customer_id, dress_type, total_amount, paid_amount, remaining_amount,
-    payment_status, delivery_date, status, storeId = 1, userId = null,
+    order_number, customer_id, dress_type, suit_quantity = 1, total_amount, paid_amount,
+    remaining_amount, payment_status, delivery_date, status, storeId = 1, userId = null,
   } = data;
   return db.prepare(
-    `INSERT INTO orders (store_id, order_number, customer_id, dress_type, price, advance, balance,
+    `INSERT INTO orders (store_id, order_number, customer_id, dress_type, suit_quantity, price, advance, balance,
       total_amount, paid_amount, remaining_amount, payment_status, delivery_date, status, created_by)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
   ).run(
-    storeId, order_number ?? null, customer_id, dress_type, total_amount, paid_amount,
+    storeId, order_number ?? null, customer_id, dress_type, Number(suit_quantity) || 1, total_amount, paid_amount,
     remaining_amount, total_amount, paid_amount, remaining_amount, payment_status,
     delivery_date, status, userId,
   );
@@ -55,14 +55,14 @@ exports.getOrderById = async (id, storeId = 1) => db.prepare(
 ).get(id, storeId);
 
 exports.updateOrder = async ({
-  id, dress_type, total_amount, paid_amount, remaining_amount, payment_status,
+  id, dress_type, suit_quantity = 1, total_amount, paid_amount, remaining_amount, payment_status,
   delivery_date, status, storeId = 1, userId = null,
 }) => db.prepare(
-  `UPDATE orders SET dress_type = ?, price = ?, advance = ?, balance = ?, total_amount = ?,
+  `UPDATE orders SET dress_type = ?, suit_quantity = ?, price = ?, advance = ?, balance = ?, total_amount = ?,
     paid_amount = ?, remaining_amount = ?, payment_status = ?, delivery_date = ?, status = ?, updated_by = ?
    WHERE id = ? AND store_id = ?`,
 ).run(
-  dress_type, total_amount, paid_amount, remaining_amount, total_amount, paid_amount,
+  dress_type, Number(suit_quantity) || 1, total_amount, paid_amount, remaining_amount, total_amount, paid_amount,
   remaining_amount, payment_status, delivery_date, status, userId, id, storeId,
 );
 

@@ -12,7 +12,7 @@ Snapshot: 2026-09-14
 - `DATABASE_URL` is REQUIRED for production desktop builds. If it is missing,
   the backend fails fast instead of falling back to a local database.
 
-## Online-only behavior (1.5.1)
+## Online-only behavior (1.5.4)
 
 All authentication, CRUD, printing, settings, and recycle-bin operations run
 against the online PostgreSQL/Supabase database. There is no local database and
@@ -61,10 +61,10 @@ under a store-specific browser key and are shown only after generation.
 
 ## Version and Electron startup
 
-The application version is `1.5.1` in the root package metadata, shared
+The application version is `1.5.4` in the root package metadata, shared
 version JSON, and footer fallback. Electron waits for the local `/health`
 endpoint, which now becomes ready even when Supabase DNS or PostgreSQL is
-unreachable. The installer was not built.
+unreachable. The 1.5.4 installer has not yet been built.
 
 ## Environment variables
 

@@ -1,6 +1,6 @@
 {
   "name": "tailor-management-system-desktop",
-  "version": "1.5.1",
+  "version": "1.5.4",
   "private": true,
   "main": "electron/main.js",
   "repository": {

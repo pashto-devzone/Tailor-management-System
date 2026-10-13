@@ -2,7 +2,7 @@ const measurementModel = require("../models/measurementModel");
 const customerModel = require("../models/customerModel");
 
 exports.addMeasurement = async (req, res) => {
-  const { customer_id, measurements, comments } = req.body;
+  const { customer_id, dress_type = "shalwar kameez", measurements, comments } = req.body;
   const storeId = req.storeId;
   const userId = req.user?.id || null;
 
@@ -17,6 +17,7 @@ exports.addMeasurement = async (req, res) => {
 
   const result = await measurementModel.createMeasurement({
     customer_id,
+    dress_type,
     measurements,
     comments: typeof comments === "string" ? comments : "",
     storeId,
@@ -28,6 +29,7 @@ exports.addMeasurement = async (req, res) => {
     measurement: {
       id: result.lastInsertRowid,
       customer_id,
+      dress_type,
       measurements,
       comments: typeof comments === "string" ? comments : "",
     },
@@ -42,13 +44,14 @@ exports.getMeasurementsByCustomerId = async (req, res) => {
     return res.status(404).json({ message: "Grahak nahi mila" });
   }
 
-  const measurements = await measurementModel.getMeasurementsByCustomerId(customer_id, storeId);
+  const dressType = req.query?.dress_type || null;
+  const measurements = await measurementModel.getMeasurementsByCustomerId(customer_id, storeId, dressType);
   res.json(measurements);
 };
 
 exports.updateMeasurement = async (req, res) => {
   const { id } = req.params;
-  const { measurements, comments } = req.body;
+  const { dress_type, measurements, comments } = req.body;
   const storeId = req.storeId;
   const userId = req.user?.id || null;
 
@@ -61,8 +64,17 @@ exports.updateMeasurement = async (req, res) => {
     return res.status(404).json({ message: "Measurement record nahi mila" });
   }
 
+  // A measurement row belongs to one customer and one garment. Do not let an
+  // update retag that row, which can make another garment appear to disappear.
+  const normalizeGarment = (value) => String(value || "").toLowerCase().replace(/[^a-z]/g, "");
+  if (dress_type && normalizeGarment(dress_type) !== normalizeGarment(existing.dress_type)) {
+    return res.status(409).json({ message: "This measurement belongs to a different garment. Reload the selected garment and try again." });
+  }
+
   await measurementModel.updateMeasurement({
     id,
+    dress_type: existing.dress_type,
+    customer_id: existing.customer_id,
     measurements,
     comments: typeof comments === "string" ? comments : undefined,
     storeId,

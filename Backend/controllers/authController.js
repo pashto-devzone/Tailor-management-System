@@ -1,5 +1,7 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
 const db = require("../config/db");
 const { JWT_SECRET, JWT_EXPIRES } = require("../middlewares/auth");
 const shopModel = require("../models/shopModel");
@@ -69,4 +71,102 @@ exports.logout = async (req, res) => {
 exports.me = (req, res) => {
   if (!req.user) return res.status(401).json({ message: "Not authenticated" });
   return res.json({ user: req.user });
+};
+
+exports.changePassword = async (req, res) => {
+  const { currentPassword, newPassword } = req.body || {};
+  if (!currentPassword || !newPassword || String(newPassword).length < 6) {
+    return res.status(400).json({ message: "Enter your current password and a new password of at least 6 characters." });
+  }
+  const user = await db.prepare("SELECT id, password_hash FROM users WHERE id = ? AND store_id = ?").get(req.user.id, req.storeId);
+  if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
+    return res.status(400).json({ message: "Current password is incorrect." });
+  }
+  const hash = await bcrypt.hash(newPassword, 10);
+  await db.prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?").run(hash, req.user.id, req.storeId);
+  // Keep this verified session alive and revoke the user's other sessions.
+  const activeToken = req.headers.authorization?.split(" ")[1] || "";
+  await db.prepare("DELETE FROM sessions WHERE user_id = ? AND token <> ?").run(req.user.id, activeToken);
+  return res.json({ message: "Password updated successfully. Other signed-in sessions have been logged out." });
+};
+
+const ensureResetTable = () => db.prepare(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+  token_hash TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+)`).run();
+
+function getRecoveryMailer() {
+  const { SMTP_HOST, SMTP_USER, SMTP_PASS, SMTP_FROM, PASSWORD_RESET_URL } = process.env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !SMTP_FROM || !PASSWORD_RESET_URL) return null;
+  let resetUrl;
+  try { resetUrl = new URL(PASSWORD_RESET_URL); } catch { return null; }
+  if (!['http:', 'https:'].includes(resetUrl.protocol) || resetUrl.username || resetUrl.password) return null;
+  if (process.env.NODE_ENV === "production" && resetUrl.protocol !== "https:") return null;
+  const port = Number(process.env.SMTP_PORT || 587);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const secure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465;
+  return {
+    resetUrl,
+    transporter: nodemailer.createTransport({ host: SMTP_HOST, port, secure, auth: { user: SMTP_USER, pass: SMTP_PASS } }),
+  };
+}
+
+const recoveryAttempts = new Map();
+exports.requestPasswordReset = async (req, res) => {
+  const ip = req.ip || req.connection?.remoteAddress || "unknown";
+  const now = Date.now();
+  const attempt = recoveryAttempts.get(ip) || { count: 0, since: now };
+  if (now - attempt.since > 60 * 60 * 1000) { attempt.count = 0; attempt.since = now; }
+  attempt.count += 1;
+  recoveryAttempts.set(ip, attempt);
+  if (attempt.count > 5) return res.status(429).json({ message: "Too many recovery requests. Try again later." });
+
+  const mailer = getRecoveryMailer();
+  if (!mailer) return res.status(503).json({ message: "Password recovery email is not configured. The owner must configure SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, and PASSWORD_RESET_URL on the backend." });
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  if (!email) return res.status(400).json({ message: "Enter your registered email address." });
+  await ensureResetTable();
+  const user = await db.prepare("SELECT id, email, name FROM users WHERE LOWER(email) = LOWER(?)").get(email);
+  if (user) {
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    await db.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").run(user.id);
+    await db.prepare("INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(tokenHash, user.id, new Date(now + 30 * 60 * 1000).toISOString());
+    const link = new URL(mailer.resetUrl);
+    // Keep the bearer token in the URL fragment so it is not sent in the
+    // browser's HTTP request or ordinary web access logs.
+    link.hash = new URLSearchParams({ token }).toString();
+    try {
+      await mailer.transporter.sendMail({
+        from: process.env.SMTP_FROM,
+        to: user.email,
+        subject: "Reset your Tailor Management System password",
+        text: `Hello ${user.name},\n\nUse this link within 30 minutes to set a new password:\n${link.toString()}\n\nIf you did not request this, you can ignore this message.`,
+      });
+    } catch (_) {
+      // Keep the public response indistinguishable for registered and
+      // unregistered addresses, and do not log recovery links or tokens.
+      await db.prepare("DELETE FROM password_reset_tokens WHERE token_hash = ?").run(tokenHash);
+    }
+  }
+  return res.json({ message: "If an account exists for that email, a password recovery link has been sent." });
+};
+
+exports.resetPassword = async (req, res) => {
+  const { token, newPassword } = req.body || {};
+  if (!token || !newPassword || String(newPassword).length < 6) return res.status(400).json({ message: "The recovery link is invalid or expired, or the new password is too short." });
+  await ensureResetTable();
+  const tokenHash = crypto.createHash("sha256").update(String(token)).digest("hex");
+  const reset = await db.prepare("SELECT user_id, expires_at FROM password_reset_tokens WHERE token_hash = ?").get(tokenHash);
+  if (!reset || new Date(reset.expires_at).getTime() <= Date.now()) {
+    if (reset) await db.prepare("DELETE FROM password_reset_tokens WHERE token_hash = ?").run(tokenHash);
+    return res.status(400).json({ message: "The recovery link is invalid or expired. Request a new link." });
+  }
+  const hash = await bcrypt.hash(newPassword, 10);
+  await db.prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(hash, reset.user_id);
+  await db.prepare("DELETE FROM sessions WHERE user_id = ?").run(reset.user_id);
+  await db.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").run(reset.user_id);
+  return res.json({ message: "Password reset successfully. You can now sign in." });
 };

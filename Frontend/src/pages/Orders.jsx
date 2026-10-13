@@ -22,6 +22,16 @@ import OrderPrint from "../components/OrderPrint";
 import MeasurementPreviewModal from "../components/MeasurementPreviewModal";
 import { useShop } from "../contexts/ShopContext";
 
+const hasCompleteGarmentMeasurements = (record, dressType) => {
+  const type = String(dressType || "").toLowerCase();
+  if (!["coat", "waistcoat", "waist coat"].includes(type)) return Boolean(record);
+  const stored = record?.measurements?.measurement_details || record?.measurements || {};
+  const measured = stored.measurements || {};
+  const required = ["lambai", "taira", "gala", "seena", "kamar", "hips", ...(type === "coat" ? ["bazoo"] : [])];
+  if (required.some((key) => !String(measured[key] ?? "").trim()) || !stored.gala?.type) return false;
+  return type !== "coat" || Boolean(stored.coat_farmaish?.buttons && stored.coat_farmaish?.chaak);
+};
+
 export default function Orders() {
 
   const [orders, setOrders] = useState([]);
@@ -56,6 +66,8 @@ export default function Orders() {
   const [measurementPrintPreviewOpen, setMeasurementPrintPreviewOpen] = useState(false);
   const [measurementPrintPreviewCustomer, setMeasurementPrintPreviewCustomer] = useState(null);
   const [measurementPrintPreviewMeasurement, setMeasurementPrintPreviewMeasurement] = useState(null);
+  const [measurementPrintPreviewOrder, setMeasurementPrintPreviewOrder] = useState(null);
+  const [pendingMeasurementOrder, setPendingMeasurementOrder] = useState(null);
   // kept for backward-compat with earlier versions; not used here
   const [measurementPrintPreviewLoading, setMeasurementPrintPreviewLoading] = useState(false);
 
@@ -146,25 +158,9 @@ export default function Orders() {
     return;
   }
 
-  setCheckingMeasurements(true);
-  try {
-    const res = await getMeasurements(normalizedId);
-    const list = Array.isArray(res.data) ? res.data : [];
-
-    if (list.length > 0) {
-      setMeasurementRecord(list[0]);
-      setMeasurementMode("update");
-    } else {
-      setMeasurementRecord(null);
-      setMeasurementMode("add");
-    }
-
-    setMeasurementCheckOpen(true);
-  } catch (err) {
-    setError("Measurements check failed");
-  } finally {
-    setCheckingMeasurements(false);
-  }
+  setCheckingMeasurements(false);
+  setMeasurementCheckOpen(false);
+  return;
 };
 
   const handleStatusChange = async (order, newStatus) => {
@@ -177,6 +173,7 @@ export default function Orders() {
         paid_amount: Number(order.paid_amount ?? order.advance ?? 0),
         remaining_amount: Number(order.remaining_amount ?? order.balance ?? 0),
         delivery_date: order.delivery_date,
+        suit_quantity: order.suit_quantity ?? 1,
         status: newStatus,
       });
       setMessage("Order updated successfully");
@@ -237,6 +234,12 @@ export default function Orders() {
       return;
     }
 
+    const suitQuantity = Number(formData.suit_quantity);
+    if (!Number.isInteger(suitQuantity) || suitQuantity < 1) {
+      setError("Suit quantity must be a positive whole number");
+      return;
+    }
+
     setOrderLoading(true);
     try {
       const price = Number(formData.price);
@@ -257,10 +260,12 @@ export default function Orders() {
         remaining_amount: balance,
         payment_status,
         delivery_date: formData.delivery_date,
+        suit_quantity: suitQuantity,
         status: formData.status,
       };
 
-      await addOrder(payload);
+      const created = await addOrder(payload);
+      const savedOrder = { ...payload, ...(created.data?.order || {}), customer_name: measurementCustomer?.name };
 
       setMessage("Order created successfully");
 
@@ -268,10 +273,12 @@ export default function Orders() {
       // Fetch latest measurement fresh (do not rely on possibly stale state).
       const customer_id_for_measurement = payload.customer_id;
       let latest = null;
+      let matchingRecord = null;
       try {
-        const res = await getMeasurements(customer_id_for_measurement);
+        const res = await getMeasurements(customer_id_for_measurement, payload.dress_type);
         const list = Array.isArray(res.data) ? res.data : [];
-        latest = list.length > 0 ? list[0] : null;
+        matchingRecord = list[0] || null;
+        latest = matchingRecord && hasCompleteGarmentMeasurements(matchingRecord, payload.dress_type) ? matchingRecord : null;
       } catch (_) {
         latest = null;
       }
@@ -283,14 +290,24 @@ export default function Orders() {
       );
 
       setMeasurementPrintPreviewCustomer(previewCustomer || measurementCustomer || null);
-      setMeasurementPrintPreviewMeasurement(latest);
-      setMeasurementPrintPreviewOpen(true);
+      setMeasurementPrintPreviewOrder(savedOrder);
+      if (latest) {
+        setMeasurementPrintPreviewMeasurement(latest);
+        setMeasurementPrintPreviewOpen(true);
+      } else {
+        setPendingMeasurementOrder(savedOrder);
+        setMeasurementRecord(matchingRecord);
+        setMeasurementMode(matchingRecord ? "update" : "add");
+        setMeasurementModalOpen(true);
+        setError(`No ${payload.dress_type} measurements exist. Add measurements for this saved order before printing.`);
+      }
 
       setFormData({
         dress_type: "shalwar kameez",
         price: "",
         advance: "",
         delivery_date: "",
+        suit_quantity: "1",
         status: "pending",
       });
       loadOrders();
@@ -335,6 +352,39 @@ export default function Orders() {
     }, 50);
   };
 
+  const handlePrintOrderMeasurements = async (order) => {
+    setError("");
+    setMeasurementPrintPreviewLoading(true);
+    try {
+      const response = await getMeasurements(order.customer_id, order.dress_type);
+      const records = Array.isArray(response.data) ? response.data : [];
+      const record = records.find((item) => String(item.dress_type || "").toLowerCase().replace(/[^a-z]/g, "") === String(order.dress_type || "").toLowerCase().replace(/[^a-z]/g, "")) || null;
+      const customer = customers.find((item) => String(item.id) === String(order.customer_id)) || {
+        id: order.customer_id,
+        name: order.customer_name || "",
+        phone: order.customer_phone || "",
+        address: order.customer_address || "",
+      };
+      if (record && hasCompleteGarmentMeasurements(record, order.dress_type)) {
+        setMeasurementPrintPreviewCustomer(customer);
+        setMeasurementPrintPreviewMeasurement(record);
+        setMeasurementPrintPreviewOrder(order);
+        setMeasurementPrintPreviewOpen(true);
+        return;
+      }
+      setMeasurementCustomer(customer);
+      setPendingMeasurementOrder(order);
+      setMeasurementRecord(record);
+      setMeasurementMode(record ? "update" : "add");
+      setMeasurementModalOpen(true);
+      setError(`No complete ${order.dress_type} measurements are available for order ${order.order_number || order.id}. Add or complete them before printing.`);
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to load this order's garment measurements.");
+    } finally {
+      setMeasurementPrintPreviewLoading(false);
+    }
+  };
+
   const openMeasurementModal = (mode) => {
     setMeasurementMode(mode);
     setMeasurementModalOpen(true);
@@ -346,17 +396,27 @@ export default function Orders() {
     setMessage("");
     setMeasurementLoading(true);
     try {
-      const { comments = "", measurements = null, customer_id = selectedCustomer } = data || {};
+      const { comments = "", measurements = null, customer_id, dress_type } = data || {};
+      const expectedCustomerId = pendingMeasurementOrder?.customer_id || selectedCustomer;
+      const normalizeGarment = (value) => String(value || "").toLowerCase().replace(/[^a-z]/g, "");
+      if (!customer_id || String(customer_id) !== String(expectedCustomerId) || !dress_type || (pendingMeasurementOrder && normalizeGarment(dress_type) !== normalizeGarment(pendingMeasurementOrder.dress_type))) {
+        throw new Error("The measurement customer or garment does not match this order. Reopen the measurement from the order.");
+      }
       const measurementPayload = measurements || {};
 
       if (measurementMode === "update" && measurementRecord?.id) {
+        if (String(measurementRecord.customer_id) !== String(customer_id) || normalizeGarment(measurementRecord.dress_type) !== normalizeGarment(dress_type)) {
+          throw new Error("The selected measurement changed. Reload the order and garment before saving.");
+        }
         await updateMeasurement(measurementRecord.id, {
           measurements: measurementPayload,
           comments,
+          dress_type,
         });
       } else {
         await addMeasurements({
           customer_id,
+          dress_type,
           measurements: measurementPayload,
           comments,
         });
@@ -367,9 +427,22 @@ export default function Orders() {
       setMeasurementRecord({
         ...(measurementRecord || {}),
         customer_id,
+        dress_type,
         measurements: measurementPayload,
         comments,
       });
+      if (pendingMeasurementOrder) {
+        const refreshed = await getMeasurements(customer_id, pendingMeasurementOrder.dress_type);
+        const matching = Array.isArray(refreshed.data) ? refreshed.data[0] : null;
+        if (matching) {
+          setMeasurementPrintPreviewCustomer(measurementCustomer || customers.find((c) => String(c.id) === String(customer_id)) || null);
+          setMeasurementPrintPreviewMeasurement(matching);
+          setMeasurementPrintPreviewOrder(pendingMeasurementOrder);
+          setMeasurementPrintPreviewOpen(true);
+          setPendingMeasurementOrder(null);
+          setError("");
+        }
+      }
     } catch (err) {
       setError(err.response?.data?.message || "Error saving measurements");
       throw err;
@@ -522,6 +595,7 @@ export default function Orders() {
         onClose={() => setMeasurementModalOpen(false)}
         onSave={handleSaveMeasurement}
         customer={measurementCustomer}
+        dressType={pendingMeasurementOrder?.dress_type || formData.dress_type}
         mode={measurementMode}
         initialData={measurementRecord}
         loading={measurementLoading}
@@ -545,11 +619,13 @@ export default function Orders() {
           settings={settings}
           customer={measurementPrintPreviewCustomer}
           measurement={measurementPrintPreviewMeasurement}
+          order={measurementPrintPreviewOrder}
 
           onCancel={() => {
             setMeasurementPrintPreviewOpen(false);
             setMeasurementPrintPreviewCustomer(null);
             setMeasurementPrintPreviewMeasurement(null);
+            setMeasurementPrintPreviewOrder(null);
           }}
 
           onEditMeasurement={() => {
@@ -557,6 +633,7 @@ export default function Orders() {
             setMeasurementPrintPreviewOpen(false);
             setMeasurementPrintPreviewCustomer(null);
             setMeasurementPrintPreviewMeasurement(null);
+            setMeasurementPrintPreviewOrder(null);
 
             // Ensure correct measurement is loaded for edit
             setMeasurementRecord(measurementPrintPreviewMeasurement);
@@ -566,11 +643,11 @@ export default function Orders() {
           }}
 
           onPrintMeasurement={() => {
-            // Print exactly the preview shown
-            window.print();
+            // Electron has completed (or cancelled) its single print request.
             setMeasurementPrintPreviewOpen(false);
             setMeasurementPrintPreviewCustomer(null);
             setMeasurementPrintPreviewMeasurement(null);
+            setMeasurementPrintPreviewOrder(null);
           }}
 
           isPrintingDisabled={measurementPrintPreviewLoading}
@@ -714,7 +791,7 @@ export default function Orders() {
             </div> */}
           {/* </label> */}
 
-          {selectedCustomer && (
+          {checkingMeasurements && selectedCustomer && (
             <div className="measurement-banner">
               <FaSyncAlt
                 className={checkingMeasurements ? "loading-icon" : ""}
@@ -734,9 +811,15 @@ export default function Orders() {
               onChange={(e) => handleOrderInput("dress_type", e.target.value)}
             >
               <option value="shalwar kameez">Shalwar Kameez</option>
-              <option value="waistcoat">Waistcoat</option>
-              <option value="sherwani">Sherwani</option>
+      <option value="waistcoat">Waist Coat</option>
+      <option value="sherwani">Sherwani</option>
+      <option value="coat">Coat</option>
             </select>
+          </label>
+          <label>
+            Suit Quantity
+            <input type="number" min="1" step="1" required value={formData.suit_quantity}
+              onChange={(e) => handleOrderInput("suit_quantity", e.target.value)} />
           </label>
           <label>
             Price
@@ -816,6 +899,7 @@ export default function Orders() {
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
                   onPrint={() => handlePrint(order)}
+                  onPrintMeasurements={handlePrintOrderMeasurements}
                   onPayment={openPaymentModal}
                   onDownloadInvoice={downloadInvoicePdf}
                 />

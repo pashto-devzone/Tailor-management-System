@@ -44,6 +44,13 @@ export const defaultMeasurementDetails = {
     // New enhancement field (backward compatible)
     patai_lambai: "",
   },
+  bukram: {
+    type: "",
+    value: "",
+  },
+  munda: {
+    value: "",
+  },
   silai: {
     type: "",
     whatsapp_number: "",
@@ -78,27 +85,27 @@ const normalizeLegacy = (source) => {
   // - button/kaaj design fields: may not exist in old data.
   const legacyGalaType = source.galla_type || "";
   const legacyHasCollar = legacyGalaType === "کالر" || Boolean(source.collar_size);
-  const legacyHasBain = legacyGalaType === "بین" || Boolean(source.bain_size);
+  const legacyHasBain = legacyGalaType === "بین" || legacyGalaType === "Ban" || Boolean(source.bain_size);
 
 
   return {
     measurements: {
-      lambai: source.lambai || "",
-      bazu: source.bazu || "",
-      taira: source.taira || "",
-      collar: source.collar || "",
-      seena: source.seena || "",
-      half_seena: source.half_seena || "",
-      kamar: source.kamar || "",
-      daaman: source.daaman || "",
-      shalwar: source.shalwar || "",
-      pancha: source.pancha || "",
+      lambai: source.lambai ?? "",
+      bazu: source.bazu ?? "",
+      taira: source.taira ?? "",
+      collar: source.collar ?? "",
+      seena: source.seena ?? "",
+      half_seena: source.half_seena ?? "",
+      kamar: source.kamar ?? "",
+      daaman: source.daaman ?? "",
+      shalwar: source.shalwar ?? "",
+      pancha: source.pancha ?? "",
     },
     // Ensure new design objects exist for legacy records
     button_design: source.button_design || defaultMeasurementDetails.button_design,
     kaaj_design: source.kaaj_design || defaultMeasurementDetails.kaaj_design,
     gala: {
-      type: legacyGalaType,
+      type: legacyGalaType === "بین" ? "Half Bain" : legacyGalaType,
       collar_type: legacyHasCollar ? (source.collar_type || "") : "",
       collar_size: source.collar_size || "",
       bain_type: legacyHasBain ? (source.bain_type || "") : "",
@@ -127,6 +134,14 @@ const normalizeLegacy = (source) => {
     patai: {
       type: source.pitai || "",
       patai_lambai: source.patai_lambai || "",
+    },
+    bukram: {
+      type: source.bukram || source.bukram_type || "",
+      value: source.bukram_value || source.bukram_sub_option || "",
+    },
+    munda: {
+      value: source.munda_value || source.munda || "",
+      comment: source.munda_comment || "",
     },
     silai: {
       type: source.silai || "",
@@ -187,7 +202,8 @@ export const normalizeMeasurementData = (source) => {
       if (merged.gala.collar_type === "چھوٹا کالر") merged.gala.collar_size = "";
     }
 
-    if (merged.gala?.type === "بین") {
+    if (merged.gala?.type === "بین") merged.gala.type = "Half Bain";
+    if (["Half Bain", "Full Bain"].includes(merged.gala?.type)) {
       if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "گول بین";
       if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "سیدھا بین";
 
@@ -227,7 +243,8 @@ export const normalizeMeasurementData = (source) => {
       if (merged.gala.collar_type === "چھوٹا کالر") merged.gala.collar_size = "";
     }
 
-    if (merged.gala?.type === "بین") {
+    if (merged.gala?.type === "بین") merged.gala.type = "Half Bain";
+    if (["Half Bain", "Full Bain"].includes(merged.gala?.type)) {
       if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "گول بین";
       if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "سیدھا بین";
 
@@ -253,7 +270,8 @@ export const normalizeMeasurementData = (source) => {
     merged.gala.collar_type = merged.gala.collar_type || "";
     if (merged.gala.collar_type === "چھوٹا کالر") merged.gala.collar_size = "";
   }
-  if (merged.gala?.type === "بین") {
+  if (merged.gala?.type === "بین") merged.gala.type = "Half Bain";
+  if (["Half Bain", "Full Bain"].includes(merged.gala?.type)) {
     if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "گول بین";
     if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "سیدھا بین";
 
@@ -273,6 +291,9 @@ export const prepareMeasurementPayload = (measurementDetails) => ({
 });
 
 const measurementLabelMap = {
+  gala: "گلا",
+  hips: "ہپس",
+  bazoo: "بازو",
   lambai: "لمبائی",
   bazu: "بازو",
   taira: "تیرا",
@@ -283,6 +304,23 @@ const measurementLabelMap = {
   daaman: "دامن",
   shalwar: "شلوار",
   pancha: "پانچہ",
+};
+
+export const MEASUREMENT_FIELD_ORDER = {
+  shalwarkameez: ["lambai", "bazu", "taira", "collar", "seena", "half_seena", "kamar", "daaman", "shalwar", "pancha"],
+  sherwani: ["lambai", "bazu", "taira", "collar", "seena", "half_seena", "kamar", "daaman", "shalwar", "pancha"],
+  coat: ["lambai", "bazoo", "taira", "gala", "seena", "kamar", "hips"],
+  waistcoat: ["lambai", "taira", "gala", "seena", "kamar", "hips"],
+};
+
+export const getOrderedMeasurementEntries = (values, dressType) => {
+  const normalizedType = String(dressType || "shalwar kameez").toLowerCase().replace(/\s+/g, "");
+  const garment = normalizedType === "waistcoat" ? "waistcoat" : normalizedType;
+  const order = MEASUREMENT_FIELD_ORDER[garment] || MEASUREMENT_FIELD_ORDER.shalwarkameez;
+  const known = new Set(order);
+  const entries = order.filter((key) => Object.prototype.hasOwnProperty.call(values || {}, key)).map((key) => [key, values[key]]);
+  const extras = Object.keys(values || {}).filter((key) => !known.has(key));
+  return [...entries, ...extras.map((key) => [key, values[key]])];
 };
 
 export const measurementListFields = [
@@ -318,6 +356,27 @@ export const FARMAISH_CANONICAL_ORDER = [
 ];
 
 const safe = (v) => v !== undefined && v !== null && String(v).trim() !== "";
+const galaDisplayLabels = {
+  "Goal Gala": "گول گلا",
+  "V Gala": "وی گلا",
+  Ban: "بین",
+  "Half Bain": "ہاف بین",
+  "Full Bain": "فل بین",
+};
+const getGalaDisplayLabel = (value) => galaDisplayLabels[value] || value;
+const farmaishDisplayLabels = {
+  "ڈبل CTC": "ڈبل سی ٹی سی",
+  "Double CTC": "ڈبل سی ٹی سی",
+  "D کف": "ڈی کف",
+  "Gol Collar": "گول کالر",
+  "Seedha Collar": "سیدھا کالر",
+  "Chota Collar": "چھوٹا کالر",
+  "2 Buttons": "دو بٹن",
+  "3 Buttons": "تین بٹن",
+  "Single Chaak": "سنگل چاک",
+  "Double Chaak": "ڈبل چاک",
+};
+const getFarmaishDisplayLabel = (value) => farmaishDisplayLabels[value] || value;
 
 export const getFarmaishRows = (details) => {
   const rows = [];
@@ -329,6 +388,27 @@ export const getFarmaishRows = (details) => {
 
   const d = details || {};
 
+  if (Array.isArray(d.waistcoat_farmaish)) {
+    const waistcoatLabels = {
+      "Boan Pocket": "بون پاکٹ",
+      "Cut Daman": "کٹ دامن",
+      "Down Zyada": "گول دامن",
+      "Daman Zyada": "گول دامن",
+      "Goal Daman": "گول دامن",
+    };
+    d.waistcoat_farmaish.forEach((value) => push("فرمائش", waistcoatLabels[value] || value));
+    if (safe(d.gala?.type)) push("\u06af\u0644\u0627 \u06a9\u06cc \u0642\u0633\u0645", getGalaDisplayLabel(d.gala.type));
+    return rows;
+  }
+  if (d.coat_farmaish && (safe(d.coat_farmaish.buttons) || safe(d.coat_farmaish.chaak))) {
+    const buttonLabels = { "2 Buttons": "دو بٹن", "3 Buttons": "تین بٹن" };
+    const chaakLabels = { "Single Chaak": "سنگل چاک", "Double Chaak": "ڈبل چاک" };
+    if (safe(d.coat_farmaish.buttons)) push("بٹن", buttonLabels[d.coat_farmaish.buttons] || d.coat_farmaish.buttons);
+    if (safe(d.coat_farmaish.chaak)) push("چاک", chaakLabels[d.coat_farmaish.chaak] || d.coat_farmaish.chaak);
+    if (safe(d.gala?.type)) push("\u06af\u0644\u0627 \u06a9\u06cc \u0642\u0633\u0645", getGalaDisplayLabel(d.gala.type));
+    return rows;
+  }
+
   // گلہ
   const galaType = d.gala?.type || "";
   if (safe(galaType)) {
@@ -336,16 +416,17 @@ export const getFarmaishRows = (details) => {
       const collarType = d.gala.collar_type || "";
       const collarSize = safe(d.gala.collar_size) ? d.gala.collar_size : "";
       if (safe(collarType)) {
-        push("کالر", collarSize ? `${collarType} (سائز: ${collarSize})` : collarType);
+        push("کالر", collarSize ? `${getFarmaishDisplayLabel(collarType)} (سائز: ${collarSize})` : getFarmaishDisplayLabel(collarType));
       }
-    } else if (galaType === "بین") {
+    } else if (["بین", "Ban", "Half Bain", "Full Bain"].includes(galaType)) {
       const bainType = d.gala.bain_type || "";
       const bainSize = safe(d.gala.bain_size) ? d.gala.bain_size : "";
       if (safe(bainType)) {
-        push("بین", bainSize ? `${bainType} (سائز: ${bainSize})` : bainType);
+        const parentLabel = galaType === "Full Bain" ? "فل بین" : "ہاف بین";
+        push(parentLabel, bainSize ? `${bainType} (سائز: ${bainSize})` : bainType);
       }
     } else {
-      push("گلہ", galaType);
+      push("گلہ", getGalaDisplayLabel(galaType));
     }
   }
 
@@ -357,9 +438,9 @@ export const getFarmaishRows = (details) => {
       push("بازو", size ? `${baazooDesign} (سائز: ${size})` : baazooDesign);
     } else if (baazooDesign === "کف") {
       const parts = [safe(d.baazoo.cuff_type) ? d.baazoo.cuff_type : "", safe(d.baazoo.cuff_size) ? d.baazoo.cuff_size : "", safe(d.baazoo.cuff_motai) ? `موٹائی: ${d.baazoo.cuff_motai}` : ""].filter(Boolean);
-      if (parts.length) push("کف", parts.join(" / "));
+      if (parts.length) push("کف", parts.map(getFarmaishDisplayLabel).join(" / "));
       if (safe(d.baazoo.cuff_extra)) push("اضافی کف سائز", d.baazoo.cuff_extra);
-      if (safe(d.baazoo.cuff_motai_comment)) push("Cuff Motai کمنٹس", d.baazoo.cuff_motai_comment);
+      if (safe(d.baazoo.cuff_motai_comment)) push("کف موٹائی کے تبصرے", d.baazoo.cuff_motai_comment);
     } else {
       push("بازو", baazooDesign);
     }
@@ -407,6 +488,25 @@ export const getFarmaishRows = (details) => {
     push("کاج ڈیزائن", comment ? `${base} (${comment})` : base);
   }
 
+  // بکرم
+  const bukramType = d.bukram?.type || "";
+  const bukramValue = d.bukram?.value || "";
+  if (safe(bukramType) || safe(bukramValue)) {
+    push("بکرم", [bukramType, bukramValue].filter(safe).join(" — "));
+  }
+
+  // منڈا
+  if (safe(d.munda?.value)) {
+    push("منڈا", d.munda.value);
+  }
+  if (safe(d.munda?.comment)) {
+    push("منڈا کمنٹس", d.munda.comment);
+  }
+
+  if (safe(d.baazoo?.extra)) {
+    push("بازو اضافی سائز", d.baazoo.extra);
+  }
+
   // سلائی
   if (safe(d.silai?.type)) {
     let line = d.silai.type;
@@ -417,7 +517,10 @@ export const getFarmaishRows = (details) => {
       if (safe(d.silai.extra_style_design)) parts.push(`اضافی: ${d.silai.extra_style_design}`);
       if (parts.length) line = `${line} (${parts.join(" ، ")})`;
     }
-    push("سلائی", line);
+    push("سلائی", getFarmaishDisplayLabel(line));
+  }
+  if (safe(d.silai?.extra_style_design) && d.silai.type !== "واٹس ایپ") {
+    push("اضافی اسٹائل / ڈیزائن", d.silai.extra_style_design);
   }
 
   // شلوار

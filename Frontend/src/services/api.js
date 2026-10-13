@@ -97,7 +97,7 @@ export const updateOrder = (id, order) => api.put(`/orders/${id}`, order);
 export const updateOrderPayment = (id, payload) => api.post(`/orders/${id}/payment`, payload);
 export const deleteOrder = (id) => api.delete(`/orders/${id}`);
 
-export const getMeasurements = (customer_id) => api.get(`/measurements/${customer_id}`);
+export const getMeasurements = (customer_id, dress_type) => api.get(`/measurements/${customer_id}`, { params: dress_type ? { dress_type } : undefined });
 export const addMeasurements = (data) => api.post("/measurements", data);
 export const updateMeasurement = (id, data) => api.put(`/measurements/${id}`, data);
 export const deleteMeasurement = (id) => api.delete(`/measurements/${id}`);
@@ -145,6 +145,9 @@ export const login = (email, password) => api.post("/auth/login", { email, passw
 export const register = (name, email, password, shopName) => api.post("/auth/register", { name, email, password, shopName });
 export const logout = () => api.post("/auth/logout");
 export const getMe = () => api.get("/auth/me");
+export const changePassword = (currentPassword, newPassword) => api.post("/auth/change-password", { currentPassword, newPassword });
+export const requestPasswordReset = (email) => api.post("/auth/forgot-password", { email });
+export const resetPassword = (token, newPassword) => api.post("/auth/reset-password", { token, newPassword });
 export const listApiKeys = () => apiV1.get("/api-keys");
 export const createApiKey = (name, scopes) => apiV1.post("/api-keys", { name, scopes });
 export const getExternalOrder = (orderId, apiKey) =>

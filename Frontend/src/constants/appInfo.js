@@ -7,7 +7,7 @@ export const appInfo = {
     versionJson?.current ??
     versionJson?.version ??
     versionJson?.latest ??
-    "1.0.0",
+    "1.5.4",
   developer: versionJson?.developer || "",
   lastUpdated: versionJson?.lastUpdated || "",
 };

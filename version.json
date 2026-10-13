@@ -1,1 +1,1 @@
-{"current":"1.5.1","latest":"1.5.1","notes":"Startup/database fix: the desktop app no longer initializes a local SQLite database and now connects directly to the online PostgreSQL/Supabase database. Security hardening: the packaged Backend/.env no longer ships real credentials in source control; deployers must inject their own database and signing secrets before building."}
+{"current":"1.5.4","latest":"1.5.4","notes":"Direct printing, clearer measurement slips, and restored Bain options."}

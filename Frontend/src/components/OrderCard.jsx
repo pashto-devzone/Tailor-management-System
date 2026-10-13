@@ -13,6 +13,7 @@ export default function OrderCard({
   onStatusChange,
   onDelete,
   onPrint,
+  onPrintMeasurements,
   onPayment,
   onDownloadInvoice,
 }) {
@@ -64,6 +65,9 @@ export default function OrderCard({
             <strong>Total:</strong> Rs {totalAmount}
           </div>
           <div>
+            <strong>Suit Quantity:</strong> {order.suit_quantity ?? 1}
+          </div>
+          <div>
             <strong>Paid:</strong> Rs {paidAmount}
           </div>
           <div>
@@ -98,6 +102,11 @@ export default function OrderCard({
           <button className="button secondary order-action" onClick={() => onPrint(order)}>
             <FaPrint />
             <span className="order-action__text">Receipt</span>
+          </button>
+
+          <button className="button secondary order-action" onClick={() => onPrintMeasurements(order)}>
+            <FaPrint />
+            <span className="order-action__text">Print Measurements</span>
           </button>
 
           <button className="button danger order-action" onClick={() => onDelete(order.id)}>

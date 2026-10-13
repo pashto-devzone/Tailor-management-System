@@ -3,14 +3,31 @@ import {
   defaultMeasurementDetails,
   normalizeMeasurementData,
   prepareMeasurementPayload,
+  MEASUREMENT_FIELD_ORDER,
 } from "../utils/measurementUtils";
 
-const gallaOptions = ["کالر", "بین", "مغزی گلہ", "ہندی گلہ", "قاسمی گلہ"];
+const gallaOptions = ["کالر", "Half Bain", "Full Bain", "مغزی گلہ", "ہندی گلہ", "قاسمی گلہ"];
 const collarTypes = ["گول کالر", "سیدھا کالر", "چھوٹا کالر"];
 const collarSizes = ["1.25 انچ", "1.5 انچ", "1.75 انچ", "2 انچ", "2.25 انچ", "2.5 انچ", "2.75 انچ", "3 انچ"];
 const bainTypes = ["گول بین", "سیدھا بین"];
 
 const bainSizes = ["0.5 انچ", "0.75 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
+const garmentDisplayLabels = {
+  "shalwar kameez": "شلوار قمیض",
+  sherwani: "شیروانی",
+  coat: "کوٹ",
+  waistcoat: "ویسٹ کوٹ",
+  "waist coat": "ویسٹ کوٹ",
+};
+const getGarmentDisplayLabel = (value) => garmentDisplayLabels[String(value || "").toLowerCase()] || value || "منتخب نہیں";
+const optionDisplayLabels = {
+  "Half Bain": "ہاف بین",
+  "Full Bain": "فل بین",
+  "Double CTC": "ڈبل سی ٹی سی",
+  "ڈبل CTC": "ڈبل سی ٹی سی",
+  "D کف": "ڈی کف",
+};
+const getOptionDisplayLabel = (value) => optionDisplayLabels[value] || value;
 
 const damanOptions = ["گول دامن", "سیدھا دامن"];
 const bazuDesigns = ["کنی بازو", "گول بازو", "کف"];
@@ -19,6 +36,7 @@ const cuffTypes = ["عام کف", "سیدھا کف", "گول کف", "D کف"];
 const cuffSizes = ["8 انچ", "8.25 انچ", "8.5 انچ", "8.75 انچ", "9 انچ", "9.25 انچ", "9.5 انچ", "9.75 انچ", "10 انچ"];
 const cuffMotaiOptions = ["2.5 انچ", "3 انچ"];
 const pataiOptions = ["0.5 انچ", "0.75 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
+const bukramOptions = ["سنگل بکرم", "ڈبل بکرم"];
 const silaiOptions = [
   "سادہ سلائی",
   "ڈبل سلائی سادہ",
@@ -29,6 +47,7 @@ const silaiOptions = [
   "ڈبل زنجیر سلائی",
   "نزدیک سلائی سادہ",
   "نزدیک سلائی چمک",
+  "چوکا سلائی",
   "ڈبل CTC",
   "واٹس ایپ",
 ];
@@ -43,7 +62,8 @@ const shalwarOptions = [
 const buildOptionVisibility = (details) => ({
   gala: !details.gala?.type,
   collarSize: !(details.gala?.type === "کالر" && details.gala?.collar_size),
-  bainSize: !(details.gala?.type === "بین" && details.gala?.bain_size),
+  bainSize: !(["Half Bain", "Full Bain", "بین", "Ban"].includes(details.gala?.type) && details.gala?.bain_type),
+  bainMeasurementSize: !details.gala?.bain_size,
   daaman: !details.daaman?.type,
   pocket: !(
     details.pocket?.front ||
@@ -59,6 +79,8 @@ const buildOptionVisibility = (details) => ({
   baazooCuffSize: !details.baazoo?.cuff_size,
   baazooCuffMotai: !details.baazoo?.cuff_motai,
   patai: !details.patai?.type,
+  bukram: !details.bukram?.type,
+  munda: !details.munda?.value,
   silai: !details.silai?.type,
   shalwar: !details.shalwar?.style,
   shalwarAdditionalPocket: !details.shalwar?.additional_pocket,
@@ -71,7 +93,7 @@ const renderRadioGroup = ({ name, options, selected, onChange, className = "" })
     {options.map((option) => (
       <label key={option} className={`radio-option ${selected === option ? "selected" : ""}`}>
         <input type="radio" name={name} value={option} checked={selected === option} onChange={(event) => onChange(event.target.value)} />
-        <span>{option}</span>
+        <span>{getOptionDisplayLabel(option)}</span>
       </label>
     ))}
   </div>
@@ -79,9 +101,9 @@ const renderRadioGroup = ({ name, options, selected, onChange, className = "" })
 
 const renderSummaryCard = (value, onEdit) => (
   <div className="selected-options-card">
-    <div className="selected-option-label">{value || "کوئی انتخاب نہیں"}</div>
+    <div className="selected-option-label">{getOptionDisplayLabel(value) || "کوئی انتخاب نہیں"}</div>
     <button type="button" className="option-toggle" onClick={onEdit}>
-      تبدیل کریں
+      ترمیم
     </button>
   </div>
 );
@@ -107,32 +129,41 @@ export default function MeasurementModal({
   customer,
   customers = [],
   mode = "add",
+  dressType = "shalwar kameez",
   initialData = null,
   loading,
   error,
 }) {
   const [formData, setFormData] = useState({
     customer_id: customer?.id || "",
+    dress_type: dressType,
     measurementDetails: { ...defaultMeasurementDetails },
   });
   const [localError, setLocalError] = useState("");
   const [showAllOptions, setShowAllOptions] = useState(() => buildOptionVisibility(defaultMeasurementDetails));
+  const initialRecordId = initialData?.id ?? null;
+  const initialRecordUpdatedAt = initialData?.updated_at ?? null;
+  const initialCustomerId = customer?.id ?? initialData?.customer_id ?? null;
+  const initialRecordDressType = initialData?.dress_type ?? null;
 
   // Keep these groups expanded until dependent sub-selections are made.
   // This prevents “options disappearing too quickly” after the user picks a parent option.
 
 
+  // Ignore object-reference refreshes for the same open record so an edit is not overwritten mid-typing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!open) return;
 
     const normalized = normalizeMeasurementData(initialData?.measurements || initialData);
     setFormData({
-      customer_id: initialData?.customer_id ?? customer?.id ?? "",
+      customer_id: customer?.id ?? initialData?.customer_id ?? "",
+      dress_type: dressType || initialData?.dress_type || "",
       measurementDetails: normalized,
     });
     setShowAllOptions(buildOptionVisibility(normalized));
     setLocalError("");
-  }, [open, initialData, customer]);
+  }, [open, initialRecordId, initialRecordUpdatedAt, initialCustomerId, initialRecordDressType, dressType]);
 
   const selectedCustomer = useMemo(
     () => customers.find((item) => String(item.id) === String(formData.customer_id)),
@@ -163,13 +194,6 @@ export default function MeasurementModal({
     }));
   };
 
-  const handleCustomerSelect = (value) => {
-    setFormData((prev) => ({
-      ...prev,
-      customer_id: value,
-    }));
-  };
-
   const collapseGroup = (group) => {
     setShowAllOptions((prev) => ({ ...prev, [group]: false }));
   };
@@ -181,9 +205,32 @@ export default function MeasurementModal({
   const handleSubmit = async (event) => {
     event.preventDefault();
 
-    if (!formData.customer_id) {
-      setLocalError("براہ کرم ایک گاہک منتخب کریں۔");
+    if (!formData.customer_id || !formData.dress_type) {
+      setLocalError("گاہک اور لباس کی معلومات موجود نہیں ہیں۔ اس ونڈو کو بند کرکے منتخب گاہک اور لباس سے دوبارہ کھولیں۔");
       return;
+    }
+
+    if (["coat", "waistcoat", "waist coat"].includes(String(formData.dress_type).toLowerCase())) {
+      const normalizedGarment = String(formData.dress_type).toLowerCase().replace(/\s+/g, "");
+      const fields = MEASUREMENT_FIELD_ORDER[normalizedGarment] || MEASUREMENT_FIELD_ORDER.waistcoat;
+      const isWaistcoat = ["waistcoat", "waist coat"].includes(String(formData.dress_type).toLowerCase());
+      if (fields.some((key) => !String(formData.measurementDetails.measurements[key] ?? "").trim()) || (isWaistcoat && !formData.measurementDetails.gala.type)) {
+        setLocalError("تمام ضروری ناپ مکمل کریں اور ویسٹ کوٹ کے لیے گلے کی قسم منتخب کریں۔");
+        return;
+      }
+      const hasInvalidMeasurement = fields.some((key) => {
+        const rawValue = String(formData.measurementDetails.measurements[key] ?? "").trim();
+        const numericValue = Number(rawValue);
+        return !Number.isFinite(numericValue) || numericValue < 0 || Math.abs(numericValue * 4 - Math.round(numericValue * 4)) > 1e-8;
+      });
+      if (hasInvalidMeasurement) {
+        setLocalError("ناپ 0.25 انچ کے درست عددی وقفوں میں درج کریں۔");
+        return;
+      }
+      if (String(formData.dress_type).toLowerCase() === "coat" && (!formData.measurementDetails.coat_farmaish?.buttons || !formData.measurementDetails.coat_farmaish?.chaak)) {
+        setLocalError("کوٹ کے لیے بٹن اور چاک دونوں منتخب کریں۔");
+        return;
+      }
     }
 
     setLocalError("");
@@ -192,6 +239,7 @@ export default function MeasurementModal({
       await Promise.resolve(
         onSave({
           customer_id: formData.customer_id,
+          dress_type: formData.dress_type,
           measurements: prepareMeasurementPayload(formData.measurementDetails),
           comments: formData.measurementDetails.notes || "",
         }),
@@ -215,32 +263,47 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="modal-card measurement-modal" onClick={(event) => event.stopPropagation()}>
+      <div className={`modal-card measurement-modal ${["coat", "waistcoat", "waist coat"].includes(String(formData.dress_type).toLowerCase()) ? "garment-measurement-modal" : ""}`} onClick={(event) => event.stopPropagation()}>
         <div className="modal-header">
-          <h3>{mode === "update" ? "میجرمنٹ اپڈیٹ کریں" : "میجرمنٹ شامل کریں"}</h3>
+          <h3>{mode === "update" ? "ناپ میں ترمیم" : "نیا ناپ درج کریں"}</h3>
         </div>
 
         <div className="measurement-modal-body">
           <form id="measurement-form" onSubmit={handleSubmit} className="measurement-modal-form">
-            <div className="measurement-form-grid">
+            <div className="measurement-context-banner" aria-label="Measurement context">
+              <span><strong>گاہک:</strong> {customer?.name || selectedCustomer?.name || "نامعلوم"}</span>
+              <span><strong>لباس:</strong> {getGarmentDisplayLabel(dressType)}</span>
+            </div>
+            {(["coat", "waistcoat", "waist coat"].includes(String(formData.dress_type).toLowerCase())) && (
+              <div className="section-card">
+                <h4>{String(formData.dress_type).toLowerCase() === "coat" ? "کوٹ کے ناپ" : "ویسٹ کوٹ کے ناپ"}</h4>
+                <div className="measurement-fields">
+                  {(String(formData.dress_type).toLowerCase() === "coat" ? MEASUREMENT_FIELD_ORDER.coat : MEASUREMENT_FIELD_ORDER.waistcoat).map((key) => (
+                    <label className="form-field" key={key}><span>{{ lambai: "لمبائی", taira: "تیرا", gala: "گلا", seena: "چھاتی", kamar: "کمر", hips: "ہپس", bazoo: "بازو" }[key]}</span>
+                      <input type="text" inputMode="decimal" value={details.measurements[key] ?? ""} onChange={(e) => handleMeasurementChange("measurements", key, e.target.value)} />
+                    </label>
+                  ))}
+                </div>
+                {String(formData.dress_type).toLowerCase() !== "coat" && <label className="form-field"><span>گلا کی قسم</span><select value={details.gala.type} onChange={(e) => handleMeasurementChange("gala", "type", e.target.value)}>
+                  <option value="">گلا کی قسم منتخب کریں</option><option value="Goal Gala">گول گلا</option><option value="V Gala">وی گلا</option><option value="Ban">بین</option>
+                </select></label>}
+                {String(formData.dress_type).toLowerCase() === "waistcoat" || String(formData.dress_type).toLowerCase() === "waist coat" ? (
+                  <fieldset className="garment-options"><legend>فرمائش</legend>{[["Boan Pocket", "بون پاکٹ"], ["Cut Daman", "کٹ دامن"], ["Goal Daman", "گول دامن"]].map(([item, label]) => <label key={item}><input type="checkbox" checked={(details.waistcoat_farmaish || []).some((value) => item === "Goal Daman" ? ["Goal Daman", "Down Zyada", "Daman Zyada"].includes(value) : value === item)} onChange={(e) => handleMeasurementChange("waistcoat_farmaish", null, e.target.checked ? [...(details.waistcoat_farmaish || []).filter((value) => !["Goal Daman", "Down Zyada", "Daman Zyada"].includes(value)), item] : (details.waistcoat_farmaish || []).filter((x) => item === "Goal Daman" ? !["Goal Daman", "Down Zyada", "Daman Zyada"].includes(x) : x !== item))} /> {label}</label>)}</fieldset>
+                ) : <div>
+                  <label className="form-field"><span>بٹن</span><select value={details.coat_farmaish?.buttons || ""} onChange={(e) => handleMeasurementChange("coat_farmaish", "buttons", e.target.value)}><option value="">منتخب کریں</option><option value="2 Buttons">دو بٹن</option><option value="3 Buttons">تین بٹن</option></select></label>
+                  <label className="form-field"><span>چاک</span><select value={details.coat_farmaish?.chaak || ""} onChange={(e) => handleMeasurementChange("coat_farmaish", "chaak", e.target.value)}><option value="">منتخب کریں</option><option value="Single Chaak">سنگل چاک</option><option value="Double Chaak">ڈبل چاک</option></select></label>
+                </div>}
+                <label className="form-field textarea-field"><span>نوٹس</span><textarea value={details.notes || ""} onChange={(e) => handleMeasurementChange("notes", null, e.target.value)} /></label>
+              </div>
+            )}
+            <div className="measurement-form-grid" style={{ display: ["coat", "waistcoat", "waist coat"].includes(String(formData.dress_type).toLowerCase()) ? "none" : undefined }}>
               <div className="measurement-column">
                 <div className="customer-select-section">
-                  <label className="form-field">
-                    <span>گاہک منتخب کریں</span>
-                    <select value={formData.customer_id} onChange={(event) => handleCustomerSelect(event.target.value)}>
-                      <option value="">گاہک منتخب کریں</option>
-                      {customers.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name} ({item.phone})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {selectedCustomer ? (
+                  {customer || selectedCustomer ? (
                     <div className="selected-customer-row">
-                      <span>نام: {selectedCustomer.name}</span>
-                      <span>فون: {selectedCustomer.phone}</span>
-                      <span>ID: {selectedCustomer.id}</span>
+                    <span>نام: {(customer || selectedCustomer).name}</span>
+                    <span>فون: {(customer || selectedCustomer).phone}</span>
+                      <span>گاہک نمبر: {(customer || selectedCustomer).id}</span>
                     </div>
                   ) : null}
                 </div>
@@ -303,7 +366,7 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                         onChange={(event) => handleMeasurementChange("measurements", "seena", event.target.value)}
                       />
                     </label>
-                    <label className="form-field">
+                    <label className="form-field half-seena-field">
                       <span>ہاف چھاتی</span>
                       <input
                         type="number"
@@ -362,7 +425,7 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                 </div>
 
                 <div className="section-card notes-card">
-                  <h4>خصوصی نوٹس</h4>
+                  <h4>خصوصی ہدایات</h4>
                   <label className="form-field textarea-field">
                     <textarea
                       rows="6"
@@ -377,20 +440,20 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
               <div className="design-sections-grid">
                 <div className="measurement-column design-column">
                   <div className="section-card">
-                    <h4>گلہ</h4>
+                    <h4>گلا</h4>
                     {showAllOptions.gala ? (
                       renderRadioGroup({
                         name: "gala_type",
                         options: gallaOptions,
                         selected: details.gala.type,
                         onChange: (value) => {
-                          const nextOptions = { ...showAllOptions, gala: false };
+                          const nextOptions = { ...showAllOptions, gala: false, bainMeasurementSize: true };
                           if (value === "کالر") {
                             nextOptions.collarSize = true;
                             nextOptions.bainSize = true;
                             handleMeasurementChange("gala", "bain_size", "");
                             handleMeasurementChange("gala", "collar_size", "");
-                          } else if (value === "بین") {
+                          } else if (["Half Bain", "Full Bain", "بین", "Ban"].includes(value)) {
                             nextOptions.collarSize = true;
                             nextOptions.bainSize = true;
                             handleMeasurementChange("gala", "collar_size", "");
@@ -399,6 +462,10 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                             nextOptions.collarSize = true;
                             nextOptions.bainSize = true;
                             handleMeasurementChange("gala", "collar_size", "");
+                            handleMeasurementChange("gala", "bain_size", "");
+                          }
+                          if (value !== details.gala.type) {
+                            handleMeasurementChange("gala", "bain_type", "");
                             handleMeasurementChange("gala", "bain_size", "");
                           }
                           setShowAllOptions(nextOptions);
@@ -447,7 +514,7 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
 
                     </div>
 
-                    <div className={`conditional-section ${details.gala.type === "بین" ? "show" : ""}`}>
+                    <div className={`conditional-section ${["Half Bain", "Full Bain", "بین", "Ban"].includes(details.gala.type) ? "show" : ""}`}>
                       <label className="section-subtitle">بین ٹائپ</label>
                       {showAllOptions.bainSize ? (
                         renderRadioGroup({
@@ -456,36 +523,29 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                           selected: details.gala.bain_type,
                           onChange: (value) => {
                             handleMeasurementChange("gala", "bain_type", value);
-                            // Keep size selector visible until bain size is selected
-                            setShowAllOptions((prev) => ({ ...prev, bainSize: true }));
-                            // Only collapse when size already exists
-                            if (details.gala.bain_size) collapseGroup("bainSize");
+                            handleMeasurementChange("gala", "bain_size", "");
+                            collapseGroup("bainSize");
+                            setShowAllOptions((prev) => ({ ...prev, bainMeasurementSize: true }));
                           },
                         })
                       ) : (
                         renderSummaryCard(details.gala.bain_type, () => expandGroup("bainSize"))
                       )}
-
-
-                      {showAllOptions.bainSize && details.gala.bain_type ? (
-                        <></>
-                      ) : null}
-
                       {details.gala.bain_type ? (
                         <>
                           <label className="section-subtitle">بین سائز</label>
-                          {showAllOptions.bainSize ? (
+                          {showAllOptions.bainMeasurementSize ? (
                             renderRadioGroup({
                               name: "bain_size",
                               options: bainSizes,
                               selected: details.gala.bain_size,
                               onChange: (value) => {
                                 handleMeasurementChange("gala", "bain_size", value);
-                                collapseGroup("bainSize");
+                                collapseGroup("bainMeasurementSize");
                               },
                             })
                           ) : (
-                            renderSummaryCard(details.gala.bain_size, () => expandGroup("bainSize"))
+                            renderSummaryCard(details.gala.bain_size, () => expandGroup("bainMeasurementSize"))
                           )}
                         </>
                       ) : null}
@@ -588,7 +648,7 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                         <div className="selected-options-card">
                           <div className="selected-option-label">{pocketSummary}</div>
                           <button type="button" className="option-toggle" onClick={() => expandGroup("pocket")}>
-                            تبدیل کریں
+                            ترمیم
                           </button>
                         </div>
                         <div className="pocket-summary-note">سامنے، سائیڈ، اور تفصیل کو ایک ہی جگہ سے دوبارہ بدلا جا سکتا ہے۔</div>
@@ -599,7 +659,6 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                   {/* Button Design + Kaaj Design directly below side-pocket related options */}
                     <div className="section-card" style={{ marginTop: 12 }}>
                       <h4>بٹن ڈیزائن</h4>
-                      <label className="section-subtitle">بٹن ڈیزائن</label>
                       {showAllOptions.buttonDesign ? (
                         renderRadioGroup({
                           name: "button_design",
@@ -631,7 +690,6 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
 
                     <div className="section-card" style={{ marginTop: 12 }}>
                       <h4>کاج ڈیزائن</h4>
-                      <label className="section-subtitle">کاج ڈیزائن</label>
                       {showAllOptions.kaajDesign ? (
                         renderRadioGroup({
                           name: "kaaj_design",
@@ -770,7 +828,7 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                           />
                         </label>
 
-                        <label className="section-subtitle">Cuff Motai (موٹائی)</label>
+                        <label className="section-subtitle">کف موٹائی</label>
                         {showAllOptions.baazooCuffMotai ? (
                           renderRadioGroup({
                             name: "cuff_motai",
@@ -786,11 +844,11 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                         )}
 
                         <label className="form-field" style={{ marginTop: 8 }}>
-                          <span>Cuff Motai کمنٹس</span>
+                          <span>کف موٹائی کے تبصرے</span>
                           <input
                             type="text"
                             className="text-input-small"
-                            placeholder="Cuff Motai کے لیے کمنٹس"
+                            placeholder="کف موٹائی کے لیے تبصرے"
                             value={details.baazoo.cuff_motai_comment || ""}
                             onChange={(event) => handleMeasurementChange("baazoo", "cuff_motai_comment", event.target.value)}
                           />
@@ -833,6 +891,50 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                     ) : null}
                   </div>
 
+                  <div className="section-card">
+                    <h4>بکرم</h4>
+                    {showAllOptions.bukram ? (
+                      renderRadioGroup({
+                        name: "bukram_type",
+                        options: bukramOptions,
+                        selected: details.bukram.type,
+                        onChange: (value) => {
+                          handleMeasurementChange("bukram", "type", value);
+                          handleMeasurementChange("bukram", "value", "");
+                          collapseGroup("bukram");
+                        },
+                      })
+                    ) : (
+                      renderSummaryCard(details.bukram.type, () => expandGroup("bukram"))
+                    )}
+
+                    {details.bukram.type ? (
+                      <div className="conditional-section show">
+                        <label className="section-subtitle">بکرم کی تفصیل</label>
+                        <label className="form-field">
+                          <input
+                            type="text"
+                            placeholder="مثلاً سنگل بکرم / ڈبل بکرم"
+                            value={details.bukram.value}
+                            onChange={(event) => handleMeasurementChange("bukram", "value", event.target.value)}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="section-card">
+                    <h4>منڈا</h4>
+                    <label className="form-field">
+                      <span>منڈا</span>
+                      <input
+                        type="text"
+                        placeholder="منڈا کی مقدار/تفصیل لکھیں"
+                        value={details.munda.value}
+                        onChange={(event) => handleMeasurementChange("munda", "value", event.target.value)}
+                      />
+                    </label>
+                  </div>
 
                   <div className="section-card">
                     <h4>سلائی</h4>
@@ -931,7 +1033,7 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
 
             <div className="modal-actions measurement-modal-footer">
               <button type="submit" className="button primary" disabled={loading}>
-                {loading ? "محفوظ کیا جا رہا ہے..." : "محفوظ کریں"}
+                {loading ? "محفوظ ہو رہا ہے…" : "ناپ محفوظ کریں"}
               </button>
               <button type="button" className="button secondary" onClick={onClose}>
                 منسوخ کریں

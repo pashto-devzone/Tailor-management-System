@@ -8,7 +8,7 @@ const VERSION =
   versionJson?.current ??
   versionJson?.version ??
   versionJson?.latest ??
-  "1.5.1";
+  "1.5.4";
 
 export default function ProfessionalFooter() {
   const [now] = useState(() => Date.now());
@@ -55,7 +55,7 @@ export default function ProfessionalFooter() {
           </div>
         </div>
 
-        <div className="professional-footer__version">Version v{VERSION}</div>
+        <div className="professional-footer__version">Version {VERSION}</div>
       </div>
     </footer>
   );

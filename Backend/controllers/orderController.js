@@ -13,6 +13,7 @@ function orderInput(body) {
     total_amount: body?.price ?? body?.total_amount ?? body?.totalAmount,
     paid_amount: body?.advance ?? body?.paid_amount ?? body?.paidAmount,
     delivery_date: body?.delivery_date ?? body?.deliveryDate,
+    suit_quantity: body?.suit_quantity ?? body?.suitQuantity,
     status: body?.status || "pending",
   };
 }
@@ -26,12 +27,15 @@ exports.createOrder = async (req, res) => {
   if (!await customerModel.getCustomerById(input.customer_id, storeId)) return res.status(404).json({ message: "Customer not found" });
   const total = Number(input.total_amount);
   const paid = Number(input.paid_amount);
+  const quantity = Number(input.suit_quantity ?? 1);
+  if (!Number.isInteger(quantity) || quantity < 1) return res.status(400).json({ message: "Suit quantity must be a positive whole number" });
   if (!Number.isFinite(total) || !Number.isFinite(paid)) return res.status(400).json({ message: "Price and advance must be numbers" });
   const remaining = Math.max(total - paid, 0);
   const settings = await settingsModel.getSettings(storeId);
   const number = await orderNumberModel.getNextOrderNumber(settings.orderNumberStartingPoint || settings.orderNumberStart, storeId);
   const result = await orderModel.createOrder({
     order_number: number, customer_id: input.customer_id, dress_type: input.dress_type,
+    suit_quantity: quantity,
     total_amount: total, paid_amount: paid, remaining_amount: remaining,
     payment_status: paymentStatus(paid, total), delivery_date: input.delivery_date,
     status: input.status, storeId, userId: req.user?.id || null,
@@ -44,9 +48,9 @@ exports.createOrder = async (req, res) => {
   }
   return res.json({
     message: "Order created successfully",
-    order: { id: result.lastInsertRowid, customer_id: input.customer_id, dress_type: input.dress_type,
+    order: { id: result.lastInsertRowid, order_number: number, customer_id: input.customer_id, dress_type: input.dress_type,
       price: total, advance: paid, balance: remaining, total_amount: total, paid_amount: paid,
-      remaining_amount: remaining, payment_status: paymentStatus(paid, total), delivery_date: input.delivery_date, status: input.status },
+      remaining_amount: remaining, payment_status: paymentStatus(paid, total), delivery_date: input.delivery_date, suit_quantity: quantity, status: input.status },
   });
 };
 
@@ -77,12 +81,15 @@ exports.updateOrder = async (req, res) => {
   if (!input.dress_type || input.total_amount == null || input.paid_amount == null || !input.delivery_date || !req.body?.status) {
     return res.status(400).json({ message: "All fields required: dress_type, price, advance, delivery_date, status" });
   }
-  if (!await orderModel.getOrderById(req.params.id, req.storeId)) return res.status(404).json({ message: "Order not found" });
+  const currentOrder = await orderModel.getOrderById(req.params.id, req.storeId);
+  if (!currentOrder) return res.status(404).json({ message: "Order not found" });
   const total = Number(input.total_amount);
   const paid = Number(input.paid_amount);
+  const quantity = Number(input.suit_quantity ?? currentOrder.suit_quantity ?? 1);
+  if (!Number.isInteger(quantity) || quantity < 1) return res.status(400).json({ message: "Suit quantity must be a positive whole number" });
   if (!Number.isFinite(total) || !Number.isFinite(paid)) return res.status(400).json({ message: "Price and advance must be numbers" });
   await orderModel.updateOrder({
-    id: req.params.id, dress_type: input.dress_type, total_amount: total, paid_amount: paid,
+    id: req.params.id, dress_type: input.dress_type, suit_quantity: quantity, total_amount: total, paid_amount: paid,
     remaining_amount: Math.max(total - paid, 0), payment_status: paymentStatus(paid, total),
     delivery_date: input.delivery_date, status: req.body.status, storeId: req.storeId, userId: req.user?.id || null,
   });
@@ -111,7 +118,6 @@ exports.updateOrderPayment = async (req, res) => {
 };
 
 exports.deleteOrder = async (req, res) => {
-  if (!await orderModel.getOrderById(req.params.id, req.storeId)) return res.status(404).json({ message: "Order not found" });
   await orderModel.softDeleteOrder(req.params.id, req.user?.id || null, req.storeId);
   return res.json({ message: "Order deleted successfully" });
 };

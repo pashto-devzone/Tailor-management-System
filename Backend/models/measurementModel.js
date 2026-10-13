@@ -6,23 +6,25 @@ const decode = (row) => row && ({
   comments: row.comments || "",
 });
 
-exports.createMeasurement = async ({ customer_id, measurements, comments = "", storeId = 1, userId = null }) =>
+exports.createMeasurement = async ({ customer_id, dress_type = "shalwar kameez", measurements, comments = "", storeId = 1, userId = null }) =>
   db.prepare(
-    "INSERT INTO measurements (store_id, customer_id, measurements, comments, created_by) VALUES (?, ?, ?::jsonb, ?, ?) RETURNING id",
-  ).run(storeId, customer_id, JSON.stringify(measurements), comments, userId);
+    "INSERT INTO measurements (store_id, customer_id, dress_type, measurements, comments, created_by) VALUES (?, ?, ?, ?::jsonb, ?, ?) RETURNING id",
+  ).run(storeId, customer_id, dress_type, JSON.stringify(measurements), comments, userId);
 
-exports.getMeasurementsByCustomerId = async (customer_id, storeId = 1) =>
-  (await db.prepare(
-    "SELECT * FROM measurements WHERE customer_id = ? AND store_id = ? AND is_deleted = FALSE ORDER BY created_at DESC",
-  ).all(customer_id, storeId)).map(decode);
+exports.getMeasurementsByCustomerId = async (customer_id, storeId = 1, dress_type = null) => {
+  const rows = dress_type
+    ? await db.prepare("SELECT * FROM measurements WHERE customer_id = ? AND store_id = ? AND is_deleted = FALSE AND LOWER(dress_type) = LOWER(?) ORDER BY created_at DESC").all(customer_id, storeId, dress_type)
+    : await db.prepare("SELECT * FROM measurements WHERE customer_id = ? AND store_id = ? AND is_deleted = FALSE ORDER BY created_at DESC").all(customer_id, storeId);
+  return rows.map(decode);
+};
 
 exports.getMeasurementById = async (id, storeId = 1) =>
   decode(await db.prepare("SELECT * FROM measurements WHERE id = ? AND store_id = ? AND is_deleted = FALSE").get(id, storeId));
 
-exports.updateMeasurement = async ({ id, measurements, comments, storeId = 1, userId = null }) =>
+exports.updateMeasurement = async ({ id, customer_id, dress_type, measurements, comments, storeId = 1, userId = null }) =>
   db.prepare(
-    "UPDATE measurements SET measurements = ?::jsonb, comments = COALESCE(?, comments), updated_by = ? WHERE id = ? AND store_id = ?",
-  ).run(JSON.stringify(measurements), comments, userId, id, storeId);
+    "UPDATE measurements SET measurements = ?::jsonb, comments = COALESCE(?, comments), updated_by = ? WHERE id = ? AND store_id = ? AND customer_id = ? AND LOWER(dress_type) = LOWER(?) AND is_deleted = FALSE",
+  ).run(JSON.stringify(measurements), comments, userId, id, storeId, customer_id, dress_type);
 
 exports.deleteMeasurement = async (id, storeId = 1) =>
   db.prepare("DELETE FROM measurements WHERE id = ? AND store_id = ?").run(id, storeId);

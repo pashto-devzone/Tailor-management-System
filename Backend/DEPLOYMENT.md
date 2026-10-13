@@ -11,8 +11,9 @@ this one service, which stores all business data in **Supabase PostgreSQL**.
 * **Runtime:** Node.js + Express 5 (CommonJS).
 * **Entry point:** `server.js`.
 * **Database:** PostgreSQL via `pg`. Production uses a Supabase connection
-  pooler. There is no separate production database and no schema is created at
-  runtime.
+  pooler. Business schema changes are applied through the documented SQL
+  migrations; the password-recovery token table is created lazily by the
+  recovery endpoint.
 * **Authentication:** JWT bearer tokens (`JWT_SECRET`) for store users, plus
   HMAC-signed API keys (`API_KEY_SECRET`) for external integrations. The
   `/api/admin` routes use a separate `ADMIN_JWT_SECRET`.
@@ -56,6 +57,8 @@ Set these in your hosting provider's environment-variable settings. Copy
 | `PGPOOL_MAX` | no | Pool size, default `5`. |
 | `PGCONNECT_TIMEOUT_MS` | no | Connect timeout, default `3000`. |
 | `BACKUP_DIR` | no | Where backup ZIPs are written. |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM` | recovery only | SMTP transport used to email single-use password recovery links. |
+| `PASSWORD_RESET_URL` | recovery only | HTTPS URL of the deployed frontend `/reset-password` route. Recovery stays unavailable until SMTP and this URL are configured. |
 
 ### Supabase pooler
 

@@ -338,6 +338,16 @@ button {
   margin-bottom: 1.5rem;
 }
 
+.customer-summary-dialog .stats-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin-bottom: 0;
+}
+
+.customer-summary-dialog .stat-card {
+  padding: 0.75rem;
+}
+
 .stat-card {
   padding: 2rem;
   text-align: left;
@@ -968,12 +978,30 @@ label:last-child {
 }
 
 .measurement-item {
-  margin-top: 0.85rem;
+  margin-top: 0.55rem;
 }
 
 .small-card {
-  padding: 1rem;
+  padding: 0.65rem 0.8rem;
 }
+
+.measurement-card-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.measurement-card-toggle h3 { margin: 0; }
+.garment-measurement-toggle { flex: 1; min-width: 0; }
+.garment-measurement-toggle .measurement-date { margin: 0 0 0 auto; }
 
 .measurement-date {
   margin: 0 0 0.75rem;
@@ -1050,6 +1078,32 @@ label:last-child {
   overflow: hidden;
 }
 
+.customer-summary-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100dvh - 32px);
+}
+
+.customer-summary-content {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.customer-summary-content::-webkit-scrollbar { width: 10px; }
+.customer-summary-content::-webkit-scrollbar-thumb { background: #94a3b8; border: 2px solid transparent; border-radius: 999px; background-clip: content-box; }
+
+.measurement-context-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
 .measurement-modal {
   width: 100%;
   max-height: 92vh;
@@ -1090,7 +1144,80 @@ label:last-child {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  min-height: 100%;
+  min-height: 0;
+}
+
+/* Compact garment cards on the Measurements page and Coat/vest forms. */
+.measurements-card { padding: 0.85rem 1rem; }
+.measurement-card-toggle {
+  width: 100%; display: flex; align-items: center; gap: 0.65rem;
+  padding: 0.15rem 0; border: 0; background: transparent; color: inherit;
+  text-align: start; cursor: pointer;
+}
+.measurement-card-toggle h3 { margin: 0; font-size: 1rem; }
+.measurement-card-toggle svg { flex: 0 0 auto; color: var(--muted); }
+.garment-picker { display: flex; align-items: end; gap: 0.75rem; margin-bottom: 1rem; padding: 0.9rem 1rem; }
+.garment-picker label { display: grid; gap: 0.3rem; min-width: 230px; }
+.measurement-detail-row {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(4rem, auto);
+  align-items: center; gap: 0.75rem; min-height: 2.35rem;
+  padding: 0.4rem 0.65rem; border-bottom: 1px solid var(--border);
+}
+.measurement-detail-row:last-child { border-bottom: 0; }
+.measurement-detail-row > * { min-width: 0; overflow-wrap: anywhere; }
+.measurement-modal .section-card { width: 100%; padding: 0.7rem; }
+.measurement-modal .measurement-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem 0.75rem; }
+.measurement-modal .section-card > .measurement-fields + .form-field { margin-top: 0.65rem; }
+.measurement-modal .textarea-field textarea { min-height: 4.5rem; resize: vertical; }
+
+/* Coat and Waist Coat forms are intentionally compact and scroll within the app. */
+.garment-measurement-modal {
+  width: 40vw;
+  max-width: min(760px, 94vw);
+  min-width: min(460px, 94vw);
+  height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px);
+}
+.garment-measurement-modal .measurement-modal-body { min-height: 0; }
+.garment-measurement-modal .measurement-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.garment-measurement-modal .measurement-fields .form-field { min-width: 0; }
+.garment-measurement-modal .measurement-fields .form-field input,
+.garment-measurement-modal .form-field select,
+.garment-measurement-modal .form-field textarea { width: 100%; min-width: 0; min-height: 40px; box-sizing: border-box; }
+.garment-measurement-modal .form-field { gap: 0.3rem; }
+.garment-measurement-modal .form-field span { white-space: normal; }
+.garment-options { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; padding: 0.65rem; margin: 0.5rem 0; border: 1px solid var(--border); border-radius: 8px; }
+.garment-options legend { padding: 0 0.35rem; font-weight: 700; }
+.garment-options label { display: inline-flex; align-items: center; gap: 0.35rem; }
+.garment-choice-options {
+  display: grid;
+  gap: 0.5rem;
+  margin: 1rem 0;
+}
+.garment-choice-option {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 0.65rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  line-height: 1.25;
+}
+.garment-choice-option input[type="radio"] {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  justify-self: center;
+  accent-color: var(--primary, #2563eb);
+}
+.garment-choice-label { min-width: 0; font-weight: 650; }
+.garment-choice-status { color: var(--muted); text-align: end; }
+@media (max-width: 480px) {
+  .garment-choice-option { grid-template-columns: 1.25rem minmax(0, 1fr); }
+  .garment-choice-status { grid-column: 2; text-align: start; }
 }
 
 .measurement-modal-footer {
@@ -1358,6 +1485,11 @@ label:last-child {
 .measurement-fields .form-field span {
   width: auto;
   white-space: nowrap;
+}
+
+.measurement-modal .half-seena-field span {
+  white-space: normal;
+  line-height: 1.2;
 }
 
 .measurement-fields .form-field input {
@@ -1813,7 +1945,52 @@ label:last-child {
   }
 }
 
+/* MeasurementPrint is rendered in the preview modal, not inside .print-area.
+   Restore visibility after the app-wide print rules hide the rest of the UI. */
+@media print {
+  .measurement-preview-backdrop,
+  .measurement-preview-backdrop * {
+    visibility: visible !important;
+  }
+  .measurement-preview-backdrop {
+    display: block !important;
+    position: static !important;
+    inset: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #fff !important;
+  }
+  .measurement-preview-backdrop .measurement-preview-dialog,
+  .measurement-preview-backdrop .measurement-preview-content {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    box-shadow: none !important;
+  }
+  .measurement-preview-backdrop .preview-actions,
+  .measurement-preview-backdrop .modal-header {
+    display: none !important;
+  }
+  .measurement-preview-backdrop .measurement-print-card {
+    display: flex !important;
+    position: static !important;
+    visibility: visible !important;
+  }
+}
+
 @media (max-width: 768px) {
+  .garment-picker { align-items: stretch; flex-direction: column; }
+  .garment-picker label { min-width: 0; }
+  .measurement-modal .measurement-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .page-grid {
     grid-template-columns: 1fr;
   }

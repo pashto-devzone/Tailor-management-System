@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { FaPlus, FaEdit, FaPrint, FaTrash } from "react-icons/fa";
+import { useEffect, useRef, useState } from "react";
+import { FaPlus, FaEdit, FaPrint, FaTrash, FaChevronDown, FaChevronRight } from "react-icons/fa";
 import {
   getCustomers,
   getMeasurements,
+  getOrdersByCustomerId,
   addMeasurements,
   updateMeasurement,
   deleteMeasurement,
@@ -13,7 +14,7 @@ import NewCustomerModal from "../components/NewCustomerModal";
 import MeasurementModal from "../components/MeasurementModal";
 import MeasurementPreviewModal from "../components/MeasurementPreviewModal";
 
-import { normalizeMeasurementData, getFarmaishRows } from "../utils/measurementUtils";
+import { normalizeMeasurementData, getFarmaishRows, getMeasurementLabel, getOrderedMeasurementEntries } from "../utils/measurementUtils";
 
 import { useShop } from "../contexts/ShopContext";
 
@@ -24,6 +25,7 @@ export default function Measurements() {
   const [selectedCustomer, setSelectedCustomer] = useState("");
   const [selectedCustomerObj, setSelectedCustomerObj] = useState(null);
   const [measurements, setMeasurements] = useState([]);
+  const [customerOrders, setCustomerOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
@@ -31,6 +33,10 @@ export default function Measurements() {
   const [measurementModalOpen, setMeasurementModalOpen] = useState(false);
   const [measurementMode, setMeasurementMode] = useState("add");
   const [measurementRecord, setMeasurementRecord] = useState(null);
+  const [cardExpanded, setCardExpanded] = useState(false);
+  const [expandedMeasurements, setExpandedMeasurements] = useState({});
+  const [showGarmentPicker, setShowGarmentPicker] = useState(false);
+  const [selectedGarment, setSelectedGarment] = useState("");
   // (legacy state removed) measurement printing now uses MeasurementPreviewModal
 
   const [measurementPreviewOpen, setMeasurementPreviewOpen] = useState(false);
@@ -38,6 +44,7 @@ export default function Measurements() {
   const [measurementPreviewCustomer, setMeasurementPreviewCustomer] = useState(null);
 
   const [savingMeasurement, setSavingMeasurement] = useState(false);
+  const selectionRequest = useRef(0);
 
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [measurementDeleteTarget, setMeasurementDeleteTarget] = useState(null);
@@ -52,16 +59,27 @@ export default function Measurements() {
   };
 
   const loadMeasurements = async (customerId) => {
+    const requestId = ++selectionRequest.current;
     if (!customerId) {
       setMeasurements([]);
+      setLoading(false);
       return;
     }
-
+    setMeasurements([]);
+    setLoading(true);
+    setError("");
     try {
       const res = await getMeasurements(customerId);
-      setMeasurements(Array.isArray(res.data) ? res.data : []);
+      if (requestId === selectionRequest.current && String(customerId) === String(selectedCustomer)) {
+        setMeasurements(Array.isArray(res.data) ? res.data : []);
+      }
     } catch (err) {
-      setError(err.response?.data?.message || "Measurements load failed.");
+      if (requestId === selectionRequest.current && String(customerId) === String(selectedCustomer)) {
+        setMeasurements([]);
+        setError(err.response?.data?.message || "Measurements load failed.");
+      }
+    } finally {
+      if (requestId === selectionRequest.current) setLoading(false);
     }
   };
 
@@ -78,6 +96,15 @@ export default function Measurements() {
   useEffect(() => {
     setSelectedCustomerObj(customers.find((customer) => String(customer.id) === String(selectedCustomer)) || null);
     loadMeasurements(selectedCustomer);
+    setCustomerOrders([]);
+    if (selectedCustomer) {
+      const customerId = selectedCustomer;
+      getOrdersByCustomerId(customerId).then((res) => {
+        if (String(customerId) === String(selectedCustomer)) setCustomerOrders(Array.isArray(res.data) ? res.data : []);
+      }).catch(() => {
+        if (String(customerId) === String(selectedCustomer)) setCustomerOrders([]);
+      });
+    } else setCustomerOrders([]);
   }, [selectedCustomer, customers]);
 
   const handleCustomerSave = async (customerData) => {
@@ -97,9 +124,10 @@ export default function Measurements() {
     }
   };
 
-  const openMeasurementModal = (mode, record = null) => {
+  const openMeasurementModal = (mode, record = null, garment = "") => {
     setMeasurementMode(mode);
     setMeasurementRecord(record);
+    setSelectedGarment(garment || record?.dress_type || "");
     setMeasurementModalOpen(true);
   };
 
@@ -108,17 +136,27 @@ export default function Measurements() {
     setMessage("");
     setSavingMeasurement(true);
     try {
-      const { comments = "", measurements = null, customer_id = selectedCustomer } = data || {};
-      const measurementPayload = measurements || {};
-      if (measurementMode === "update" && measurementRecord?.id) {
-        await updateMeasurement(measurementRecord.id, {
-          measurements: measurementPayload,
+      const { comments = "", measurements: measurementPayload = null, customer_id = selectedCustomer, dress_type = measurementRecord?.dress_type || "shalwar kameez" } = data || {};
+      const payload = measurementPayload || {};
+      const garmentKey = (value) => String(value || "").toLowerCase().replace(/\s+/g, "");
+      const recordToUpdate = measurementMode === "update" ? measurementRecord : null;
+      if (recordToUpdate && (
+        String(recordToUpdate.customer_id) !== String(customer_id) ||
+        garmentKey(recordToUpdate.dress_type) !== garmentKey(dress_type)
+      )) {
+        throw new Error("The selected measurement context changed. Reload the customer and garment before saving.");
+      }
+      if (recordToUpdate?.id) {
+        await updateMeasurement(recordToUpdate.id, {
+          measurements: payload,
           comments,
+          dress_type,
         });
       } else {
         await addMeasurements({
           customer_id,
-          measurements: measurementPayload,
+          dress_type,
+          measurements: payload,
           comments,
         });
       }
@@ -177,10 +215,22 @@ export default function Measurements() {
           <h2>Measurements</h2>
           <p>View, add, or update customer measurements.</p>
         </div>
-        <button className="button primary small" onClick={() => openMeasurementModal("add")}> 
-          <FaPlus /> Add Measurements
+        <button className="button primary small" disabled={!selectedCustomer} onClick={() => { setSelectedGarment(""); setShowGarmentPicker((value) => !value); }}>
+          <FaPlus /> Add Measurement
         </button>
       </div>
+
+      {showGarmentPicker && selectedCustomer && <div className="card garment-picker">
+        <label>Choose garment type<select value={selectedGarment} onChange={(event) => setSelectedGarment(event.target.value)}>
+          <option value="">Select garment type</option><option value="shalwar kameez">Shalwar Qameez</option><option value="waistcoat">Waist Coat</option><option value="coat">Coat</option><option value="sherwani">Sherwani</option>
+        </select></label>
+        <button className="button primary small" disabled={!selectedGarment} onClick={() => {
+          const garmentKey = (value) => String(value || "").toLowerCase().replace(/\s+/g, "");
+          const existing = measurements.find((item) => garmentKey(item.dress_type) === garmentKey(selectedGarment));
+          setShowGarmentPicker(false);
+          openMeasurementModal(existing ? "update" : "add", existing || null, selectedGarment);
+        }}>{measurements.some((item) => String(item.dress_type || "").toLowerCase().replace(/\s+/g, "") === selectedGarment.toLowerCase().replace(/\s+/g, "")) ? "Edit Existing Measurement" : "Continue"}</button>
+      </div>}
 
       <NewCustomerModal
         open={modalOpen}
@@ -197,6 +247,7 @@ export default function Measurements() {
         customer={selectedCustomerObj}
         customers={customers}
         mode={measurementMode}
+        dressType={selectedGarment || measurementRecord?.dress_type || ""}
         initialData={measurementRecord}
         loading={savingMeasurement}
         error={error}
@@ -234,29 +285,29 @@ export default function Measurements() {
       </div>
 
       <div className="card measurements-card">
-        <div className="section-title">
-          <h3>{selectedCustomerObj ? `Measurements for ${selectedCustomerObj.name}` : "Saved Measurements"}</h3>
-          {selectedCustomer && (
-            <button className="button secondary small" onClick={() => openMeasurementModal(measurements.length ? "update" : "add", measurements[0] || null)}>
-              <FaEdit /> {measurements.length ? "Update Last Naap" : "Add Naap"}
-            </button>
-          )}
-        </div>
+        <button type="button" className="measurement-card-toggle" aria-expanded={cardExpanded} onClick={() => setCardExpanded((value) => !value)}>
+          {cardExpanded ? <FaChevronDown /> : <FaChevronRight />}<h3>{selectedCustomerObj ? `Measurements for ${selectedCustomerObj.name}` : "Saved Measurements"}</h3>
+        </button>
 
-        {selectedCustomer === "" ? (
+        {cardExpanded && (selectedCustomer === "" ? (
           <p>Please select a customer to view measurements.</p>
         ) : loading ? (
           <p>Loading measurements...</p>
         ) : measurements.length === 0 ? (
-          <p>Koi measurement available nahi hai.</p>
+          <p>No measurements available.</p>
         ) : (
           <div className="measurement-list">
             {measurements.map((item) => {
               const details = normalizeMeasurementData(item.measurements || item);
+              const orderedFields = getOrderedMeasurementEntries(details.measurements, item.dress_type);
               return (
                 <div key={item.id} className="measurement-item card small-card">
                   <div className="measurement-print-row">
-                    <p className="measurement-date">{new Date(item.created_at).toLocaleString()}</p>
+                    <button type="button" className="measurement-card-toggle garment-measurement-toggle" aria-expanded={Boolean(expandedMeasurements[item.id])} onClick={() => setExpandedMeasurements((previous) => ({ ...previous, [item.id]: !previous[item.id] }))}>
+                      {expandedMeasurements[item.id] ? <FaChevronDown /> : <FaChevronRight />}
+                      <strong>{item.dress_type || "Measurement"}</strong>
+                      <span className="measurement-date">{new Date(item.created_at).toLocaleString()}</span>
+                    </button>
                     <div className="measurement-buttons">
                       <button className="button secondary small" onClick={() => openMeasurementModal("update", item)}>
                         <FaEdit /> Update
@@ -266,54 +317,22 @@ export default function Measurements() {
                       </button>
 
                       <button className="button danger small" onClick={() => promptDeleteMeasurement(item)}>
-                        <FaTrash /> حذف
+                        <FaTrash /> Delete
                       </button>
                     </div>
                   </div>
 
+                  {expandedMeasurements[item.id] && <>
+
                   <div className="measurement-detail-cards">
                     <div className="measurement-detail-card">
-                      <h4>پیمائش</h4>
-                      <div className="measurement-detail-row">
-                        <span>لمبائی</span>
-                        <strong>{details.measurements.lambai || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>بازو</span>
-                        <strong>{details.measurements.bazu || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>تیرا</span>
-                        <strong>{details.measurements.taira || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>کالر</span>
-                        <strong>{details.measurements.collar || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>چھاتی</span>
-                        <strong>{details.measurements.seena || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>ہاف چھاتی</span>
-                        <strong>{details.measurements.half_seena || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>کمر</span>
-                        <strong>{details.measurements.kamar || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>دامن</span>
-                        <strong>{details.measurements.daaman || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>شلوار</span>
-                        <strong>{details.measurements.shalwar || "-"}</strong>
-                      </div>
-                      <div className="measurement-detail-row">
-                        <span>پانچہ</span>
-                        <strong>{details.measurements.pancha || "-"}</strong>
-                      </div>
+                      <h4>Measurements</h4>
+                      {orderedFields.map(([key, value]) => (
+                        <div className="measurement-detail-row" key={key}>
+                          <span>{getMeasurementLabel(key)}</span>
+                          <strong>{value || "-"}</strong>
+                        </div>
+                      ))}
                     </div>
                   <div className="measurement-detail-card">
                     <h4>فرمائش</h4>
@@ -347,23 +366,24 @@ export default function Measurements() {
                       <p>{details.notes}</p>
                     </div>
                   ) : null}
+                  </>}
                 </div>
               );
             })}
           </div>
-        )}
+        ))}
       </div>
 
       {confirmDeleteOpen && (
         <div className="confirm-backdrop" onClick={cancelDeleteMeasurement}>
           <div className="confirm-card" onClick={(e) => e.stopPropagation()}>
-            <p className="confirm-message">کیا آپ واقعی یہ پیمائش حذف کرنا چاہتے ہیں؟</p>
+            <p className="confirm-message">Are you sure you want to delete this measurement?</p>
             <div className="confirm-actions">
               <button className="button danger" onClick={handleDeleteMeasurement} disabled={savingMeasurement}>
-                حذف کریں
+                Delete
               </button>
               <button className="button secondary" onClick={cancelDeleteMeasurement}>
-                منسوخ کریں
+                Cancel
               </button>
             </div>
           </div>
@@ -377,6 +397,7 @@ export default function Measurements() {
           settings={settings}
           customer={measurementPreviewCustomer}
           measurement={measurementPreviewMeasurement}
+          order={customerOrders.find((item) => String(item.dress_type || "").toLowerCase().replace(/\s+/g, "") === String(measurementPreviewMeasurement.dress_type || "shalwar kameez").toLowerCase().replace(/\s+/g, "")) || null}
           onCancel={() => {
             setMeasurementPreviewOpen(false);
             setMeasurementPreviewMeasurement(null);
@@ -389,8 +410,9 @@ export default function Measurements() {
             openMeasurementModal("update", measurementPreviewMeasurement);
           }}
           onPrintMeasurement={() => {
-            // Browser prints the exact DOM currently rendered inside MeasurementPrint.
-            window.print();
+            setMeasurementPreviewOpen(false);
+            setMeasurementPreviewMeasurement(null);
+            setMeasurementPreviewCustomer(null);
           }}
         />
       )}

@@ -2,7 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const { fork } = require('child_process');
 
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 
 let autoUpdater = null;
 let backendProcess = null;
@@ -331,6 +331,12 @@ function resolveFrontendUrlOrFile() {
 
 
 
+function stopBackend() {
+  if (!backendProcess || backendProcess.killed) return;
+  backendProcess.kill();
+  backendProcess = null;
+}
+
 async function getShopNameFromBackend() {
   // Try to fetch shop data from backend once ready.
   // We will ask backend /api/shop (should exist based on routes).
@@ -342,11 +348,6 @@ async function getShopNameFromBackend() {
     throw new Error(`Failed to fetch shop info: HTTP ${r.status}. ${txt}`);
   }
 
-  function stopBackend() {
-    if (!backendProcess || backendProcess.killed) return;
-    backendProcess.kill();
-    backendProcess = null;
-  }
   const data = await r.json();
 
 
@@ -448,6 +449,166 @@ function sendToRenderer(channel, ...args) {
     }
   } catch (_) {}
 }
+
+function getWindowForEvent(event) {
+  try {
+    if (event && event.sender && typeof event.sender === 'object') {
+      const senderWindow = BrowserWindow.fromWebContents(event.sender);
+      if (senderWindow) return senderWindow;
+    }
+  } catch (_) {}
+
+  const allWindows = BrowserWindow.getAllWindows();
+  return allWindows[0] || null;
+}
+
+const DEFAULT_PRINT_OPTIONS = {
+  silent: false,
+  printBackground: true,
+  landscape: false,
+  pageSize: 'A5',
+  scaleFactor: 1,
+  margins: { marginType: 'none' },
+};
+
+const activePrintJobs = new Set();
+
+async function createMeasurementPrintWindow(sourceWindow) {
+  const preview = await sourceWindow.webContents.executeJavaScript(`(() => {
+    const root = document.querySelector('.measurement-preview-content');
+    const page = root?.querySelector('.measurement-preview-page');
+    const styles = root?.querySelector(':scope > style')?.textContent;
+    const customerRow = page?.querySelector('[data-preview-customer]');
+    const hasCustomer = Boolean(customerRow?.querySelector('.measurement-preview-meta-value')?.textContent.trim());
+    const hasSavedDetails = Array.from(page?.querySelectorAll('.measurement-preview-table .measurement-preview-value') || [])
+      .some((cell) => cell.textContent.trim());
+    if (!page || !styles || !page.textContent.trim() || !hasCustomer || !hasSavedDetails) return null;
+    return { markup: page.outerHTML, styles };
+  })()`);
+  if (!preview) throw new Error('The selected customer and measurement details are not available for printing.');
+
+  // Print the same preview page markup and CSS shown to the user. The narrow
+  // overrides only restore the preview's desktop layout and remove modal UI.
+  const printWindow = new BrowserWindow({
+    show: false,
+    width: 1000,
+    height: 1400,
+    backgroundColor: '#ffffff',
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  try {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${preview.styles}</style><style>
+      html,body{margin:0!important;padding:0!important;width:100%!important;background:#fff!important;color:#000!important}
+      .measurement-preview-backdrop{display:block!important;position:static!important;padding:0!important;background:#fff!important}
+      .measurement-preview-content{display:block!important;position:static!important;width:100%!important;height:auto!important;overflow:visible!important;padding:0!important}
+      .measurement-preview-backdrop .measurement-preview-page{display:flex!important;flex:0 0 auto!important;box-shadow:none!important}
+      .measurement-print-source{display:none!important}
+      @media print{
+        .measurement-preview-header{grid-template-columns:minmax(0,1.25fr) minmax(0,0.75fr)!important}
+        .measurement-preview-meta{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+      }
+      @page{size:A5 portrait;margin:4px}
+    </style></head><body><div class="measurement-preview-backdrop"><div class="measurement-preview-dialog"><div><div class="measurement-preview-content">${preview.markup}</div></div></div></div></body></html>`;
+    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    const ready = await printWindow.webContents.executeJavaScript(`(async () => {
+      if (document.fonts?.ready) await document.fonts.ready;
+      if (document.fonts?.load) await document.fonts.load('11pt "Noto Nastaliq Urdu"');
+      await Promise.all(Array.from(document.images).map((image) => image.decode ? image.decode().catch(() => {}) : Promise.resolve()));
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const page = document.querySelector('.measurement-preview-page');
+      const customer = page?.querySelector('[data-preview-customer] .measurement-preview-meta-value')?.textContent.trim();
+      const hasSavedDetails = Array.from(page?.querySelectorAll('.measurement-preview-table .measurement-preview-value') || [])
+        .some((cell) => cell.textContent.trim());
+      return Boolean(page && customer && hasSavedDetails && page.getBoundingClientRect().width > 0 && page.getClientRects().length);
+    })()`);
+    if (!ready) throw new Error('The selected customer measurement details did not finish rendering.');
+    return printWindow;
+  } catch (error) {
+    if (!printWindow.isDestroyed()) printWindow.destroy();
+    throw error;
+  }
+}
+
+async function createMeasurementPdfBuffer(sourceWindow) {
+  const printWindow = await createMeasurementPrintWindow(sourceWindow);
+  try {
+    return await printWindow.webContents.printToPDF({
+      printBackground: true,
+      landscape: false,
+      pageSize: 'A5',
+      margins: { marginType: 'none' },
+      preferCSSPageSize: true,
+      scaleFactor: 1,
+    });
+  } finally {
+    if (!printWindow.isDestroyed()) printWindow.destroy();
+  }
+}
+
+ipcMain.handle('print:current-page', async (event) => {
+  const win = getWindowForEvent(event);
+  if (!win) return { ok: false, message: 'No active Electron window found for printing.' };
+  const jobKey = win.webContents.id;
+  if (activePrintJobs.has(jobKey)) return { ok: false, message: 'A print job is already in progress.' };
+  activePrintJobs.add(jobKey);
+
+  try {
+    const printWindow = await createMeasurementPrintWindow(win);
+    try {
+      const hasRenderedSlip = await printWindow.webContents.executeJavaScript(`(() => {
+        const page = document.querySelector('.measurement-preview-page');
+        const customer = page?.querySelector('[data-preview-customer] .measurement-preview-meta-value')?.textContent.trim();
+        const hasSavedDetails = Array.from(page?.querySelectorAll('.measurement-preview-table .measurement-preview-value') || [])
+          .some((cell) => cell.textContent.trim());
+        return Boolean(page && customer && hasSavedDetails && page.getBoundingClientRect().width > 0 && page.getClientRects().length);
+      })()`);
+      if (!hasRenderedSlip) throw new Error('The print target does not contain the selected customer and saved measurement details.');
+      return await new Promise((resolve) => {
+        if (win.isDestroyed() || printWindow.isDestroyed() || printWindow.webContents.isDestroyed()) {
+          resolve({ ok: false, message: 'The print window closed before printing started.' });
+          return;
+        }
+        printWindow.webContents.print(DEFAULT_PRINT_OPTIONS, (success, failureReason) => {
+          if (success) resolve({ ok: true });
+          else if (String(failureReason || '').toLowerCase().includes('cancel')) {
+            resolve({ ok: false, canceled: true, message: 'Printing was canceled.' });
+          } else {
+            resolve({ ok: false, message: failureReason || 'The printer could not complete the print job.' });
+          }
+        });
+      });
+    } finally {
+      if (!printWindow.isDestroyed()) printWindow.destroy();
+    }
+  } catch (error) {
+    return { ok: false, message: error?.message || 'The print request failed.' };
+  } finally {
+    activePrintJobs.delete(jobKey);
+  }
+});
+
+ipcMain.handle('print:current-page-pdf', async (event) => {
+  const win = getWindowForEvent(event);
+  if (!win) return { ok: false, message: 'No active Electron window found for PDF export.' };
+  const jobKey = win.webContents.id;
+  if (activePrintJobs.has(jobKey)) return { ok: false, message: 'A print job is already in progress.' };
+  activePrintJobs.add(jobKey);
+
+  try {
+    const pdfBuffer = await createMeasurementPdfBuffer(win);
+
+    const outputPath = path.join(app.getPath('documents'), 'tailor-measurement-print.pdf');
+    fs.writeFileSync(outputPath, pdfBuffer);
+    return { ok: true, path: outputPath, filePath: outputPath };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error && error.message ? error.message : String(error),
+    };
+  } finally {
+    activePrintJobs.delete(jobKey);
+  }
+});
 
 if (autoUpdater) {
   autoUpdater.autoDownload = true;
