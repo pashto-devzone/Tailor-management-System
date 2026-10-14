@@ -17,6 +17,7 @@ exports.getSettings = async (req, res) => {
   res.json({
     ...defaultSettings,
     ...settings,
+    printSettingsPersisted: await settingsModel.canPersistPrintSettings(),
   });
 };
 
@@ -39,6 +40,8 @@ exports.saveSettings = async (req, res) => {
     orderNumberStart: payload.orderNumberStart,
     applySerialNumberChangesToExistingCustomers:
       payload.applySerialNumberChangesToExistingCustomers,
+    // undefined keeps the stored print settings; an object replaces them.
+    printSettings: payload.printSettings,
   });
 
   const settings = await settingsModel.getSettings(storeId);
@@ -74,5 +77,8 @@ exports.saveSettings = async (req, res) => {
     }
   }
 
-  res.json(settings || defaultSettings);
+  res.json({
+    ...(settings || defaultSettings),
+    printSettingsPersisted: await settingsModel.canPersistPrintSettings(),
+  });
 };

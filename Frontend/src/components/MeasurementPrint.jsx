@@ -87,7 +87,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
 
         .measurement-preview-content .print-area {
           box-sizing: border-box;
-          width: calc(148mm - 8px);
+          width: calc(148mm - 14mm);
           max-width: none;
           margin: 0 auto;
           padding: 0;
@@ -95,8 +95,8 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
         }
 
         .measurement-print-card {
-          width: 100%;
-          max-width: 100%;
+          width: calc(148mm - 14mm);
+          max-width: calc(148mm - 14mm);
           margin: 0 auto;
           box-sizing: border-box;
           border: 1.2px solid #111;
@@ -109,13 +109,13 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
           flex-direction: column;
           gap: 2mm;
           min-height: 0;
-          height: calc(210mm - 8px);
+          height: calc(210mm - 14mm);
         }
 
         .measurement-preview-content .measurement-print-card {
-          width: calc(148mm - 8px);
+          width: calc(148mm - 14mm);
           max-width: none;
-          height: calc(210mm - 8px);
+          height: calc(210mm - 14mm);
           margin: 0;
           padding: 2mm;
           border: 1.2px solid #111;
@@ -309,7 +309,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
 
         @page {
           size: A5 portrait;
-          margin: 4px;
+          margin: 7mm;
         }
 
         @media print {
@@ -397,7 +397,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
             box-sizing: border-box !important;
             width: 100% !important;
             min-height: 0 !important;
-            height: calc(210mm - 8px) !important;
+            height: calc(210mm - 14mm) !important;
             max-height: none !important;
             margin: 0 !important;
             padding: 2mm !important;

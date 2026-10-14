@@ -150,7 +150,8 @@ CREATE TABLE IF NOT EXISTS settings (
   customerserialstart TEXT,
   ordernumberstartingpoint TEXT,
   ordernumberstart TEXT,
-  applyserialnumberchangestoexistingcustomers BOOLEAN NOT NULL DEFAULT FALSE
+  applyserialnumberchangestoexistingcustomers BOOLEAN NOT NULL DEFAULT FALSE,
+  printsettings TEXT
 );
 
 CREATE TABLE IF NOT EXISTS api_keys (

@@ -145,6 +145,24 @@ function prepare(sql) {
   return localPrepare(sql);
 }
 
+// Existing local databases predate columns added later to 001_initial.sql
+// (CREATE TABLE IF NOT EXISTS never alters an existing table). This guarded,
+// idempotent step keeps the development SQLite database in sync with the
+// canonical schema. Production PostgreSQL applies numbered migrations out of
+// band instead (see DEPLOYMENT.md).
+function ensureLocalColumn(dbHandle, table, column, ddlType) {
+  try {
+    const info = dbHandle.exec(`PRAGMA table_info(${table})`);
+    const columns = (info && info[0] && info[0].values ? info[0].values : []).map((row) => row[1]);
+    if (!columns.includes(column)) {
+      dbHandle.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddlType}`);
+      console.log(`[database] added ${table}.${column} to the local database`);
+    }
+  } catch (error) {
+    console.warn(`[database] could not ensure ${table}.${column}:`, error.message);
+  }
+}
+
 async function initialize() {
   if (localDb) return;
 
@@ -216,6 +234,7 @@ async function initialize() {
   localDb = new SQL.Database(existing);
   localDb.run("PRAGMA foreign_keys = ON");
   localDb.run(sqliteMigration());
+  ensureLocalColumn(localDb, "settings", "printsettings", "TEXT");
   saveDatabase();
   console.log("[database] local SQLite initialized");
 }

@@ -1,10 +1,11 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getFarmaishRows,
   getMeasurementLabel,
   getOrderedMeasurementEntries,
   normalizeMeasurementData,
 } from "../utils/measurementUtils";
+import { normalizePrintSettings, printSettingsCssVars } from "../utils/printConfig";
 
 export default function MeasurementPreviewModal({
   open,
@@ -21,7 +22,46 @@ export default function MeasurementPreviewModal({
 }) {
   const [printError, setPrintError] = useState("");
   const [printing, setPrinting] = useState(false);
+  const [contentOverflows, setContentOverflows] = useState(false);
   const printInFlight = useRef(false);
+  const sheetRef = useRef(null);
+
+  // One configuration-to-print path: the saved Print Settings (or the safe
+  // defaults) drive this preview AND the Electron print document. The same
+  // resolved object is passed to webContents.print via IPC.
+  const printSettings = useMemo(
+    () => normalizePrintSettings(settings?.printSettings).settings,
+    [settings?.printSettings],
+  );
+  const printCssVars = useMemo(() => printSettingsCssVars(printSettings), [printSettings]);
+
+  // Report (instead of silently clipping) when the complete slip is taller
+  // than the selected paper. Measures the natural height after Urdu fonts
+  // are ready.
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    const measure = async () => {
+      try {
+        if (document.fonts?.ready) await document.fonts.ready;
+      } catch (_) {}
+      if (cancelled) return;
+      const sheet = sheetRef.current;
+      if (!sheet) return;
+      const paperMm = parseFloat(getComputedStyle(sheet).getPropertyValue("--ps-paper-h")) || 0;
+      const paperPx = paperMm * (96 / 25.4);
+      const prevHeight = sheet.style.height;
+      sheet.style.height = "auto";
+      const naturalPx = sheet.scrollHeight;
+      sheet.style.height = prevHeight;
+      if (!cancelled) setContentOverflows(paperPx > 0 && naturalPx > paperPx + 4);
+    };
+    const raf = requestAnimationFrame(measure);
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(raf);
+    };
+  }, [open, printSettings]);
 
   const details = normalizeMeasurementData(measurement?.measurements || measurement || {});
   const safe = (value) => value !== undefined && value !== null && String(value).trim() !== "";
@@ -59,8 +99,11 @@ export default function MeasurementPreviewModal({
     ["Garment Type:", order?.dress_type || measurement?.dress_type],
     ["Suit Quantity:", order?.suit_quantity ?? 1],
   ].filter(([, value]) => safe(value));
-  const renderPreviewTable = (rows) => (
-    <div className="measurement-preview-table" style={{ "--preview-row-count": Math.max(rows.length, 1) }}>
+  const renderPreviewTable = (rows, variant) => (
+    <div
+      className={`measurement-preview-table${variant ? ` measurement-preview-table--${variant}` : ""}`}
+      style={{ "--preview-row-count": Math.max(rows.length, 1) }}
+    >
       {rows.map((row, index) => (
         <div className="measurement-preview-row" key={`${row.label}-${index}`}>
           <div className="measurement-preview-label">{row.label}</div>
@@ -80,7 +123,7 @@ export default function MeasurementPreviewModal({
     try {
       const printPage = window.electronAPI?.printCurrentPage;
       if (printPage) {
-        const result = await printPage();
+        const result = await printPage(printSettings);
         if (result?.canceled) return;
         if (result?.ok === false) {
           throw new Error(result.message || "Electron could not start printing.");
@@ -144,21 +187,46 @@ export default function MeasurementPreviewModal({
               .measurement-preview-backdrop > .measurement-preview-dialog > div > .measurement-preview-content {
                 display: flex !important;
               }
+              :root {
+                ${printCssVars};
+              }
+              .measurement-print-sheet {
+                box-sizing: border-box;
+                display: flex;
+                flex-direction: column;
+                width: var(--ps-paper-w);
+                min-height: var(--ps-paper-h);
+                padding: var(--ps-pad-top) var(--ps-pad-right) var(--ps-pad-bottom) var(--ps-pad-left);
+                border: 1px solid #111;
+                background: #fff;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+              }
               .measurement-preview-page {
                 direction: rtl;
                 box-sizing: border-box;
                 display: flex;
-                flex: 0 0 auto;
+                flex: 1 1 auto;
                 flex-direction: column;
-                gap: 2mm;
-                width: calc(148mm - 8px);
-                min-height: calc(210mm - 8px);
-                padding: 2mm;
-                border: 1px solid #111;
+                gap: 1.5mm;
+                width: 100%;
+                min-height: 0;
                 background: #fff;
                 color: #111;
                 font-family: "Noto Nastaliq Urdu", "Nirmala UI", Arial, sans-serif;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+              }
+              .measurement-print-fit-warning {
+                box-sizing: border-box;
+                width: var(--ps-paper-w);
+                margin: 6px auto 0;
+                padding: 6px 8px;
+                border: 1px solid #d97706;
+                background: #fffbeb;
+                color: #92400e;
+                font: 600 13px/1.4 Arial, sans-serif;
+                text-align: center;
+              }
+              @media print {
+                .measurement-print-fit-warning { display: none !important; }
               }
               .measurement-preview-header {
                 display: grid;
@@ -174,10 +242,12 @@ export default function MeasurementPreviewModal({
               .measurement-preview-meta {
                 display: grid;
                 grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 1.5mm 2mm;
+                gap: 1mm 1.5mm;
                 min-width: 0;
                 direction: ltr;
-                font: 10pt/1.35 Arial, sans-serif;
+                font-family: Arial, sans-serif;
+                font-size: var(--ps-table-size);
+                line-height: 1.3;
               }
               .measurement-preview-meta-row {
                 display: grid;
@@ -204,12 +274,15 @@ export default function MeasurementPreviewModal({
                 word-break: break-word;
               }
               .measurement-preview-shop-name {
-                font: 800 17pt/1.25 Arial, sans-serif;
+                font-family: Arial, sans-serif;
+                font-size: var(--ps-header-size);
+                font-weight: var(--ps-header-weight);
+                line-height: 1.3;
                 margin-bottom: 1mm;
               }
               .measurement-preview-shop-detail {
-                font-size: 10pt;
-                line-height: 1.75;
+                font-size: var(--ps-table-size);
+                line-height: 1.45;
                 overflow-wrap: anywhere;
                 word-break: break-word;
               }
@@ -228,10 +301,10 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-section-title {
                 flex: 0 0 auto;
-                margin: 0 0 1.5mm;
-                font-size: 13pt;
-                line-height: 1.5;
-                font-weight: 800;
+                margin: 0 0 1mm;
+                font-size: var(--ps-header-size);
+                line-height: 1.35;
+                font-weight: var(--ps-header-weight);
                 text-align: right;
               }
               .measurement-preview-table {
@@ -253,12 +326,16 @@ export default function MeasurementPreviewModal({
                 align-items: center;
                 min-width: 0;
                 border: 1px solid #111;
-                padding: 1mm 1.2mm;
-                font-size: 14pt;
-                line-height: 1.4;
-                font-weight: 850;
+                padding: 0.6mm 1mm;
+                font-size: var(--ps-table-size);
+                line-height: 1.35;
+                font-weight: 700;
                 overflow-wrap: anywhere;
                 word-break: break-word;
+              }
+              .measurement-preview-table--farmaish .measurement-preview-label,
+              .measurement-preview-table--farmaish .measurement-preview-value {
+                font-size: var(--ps-farmaish-size);
               }
               .measurement-preview-label {
                 justify-content: flex-start;
@@ -270,14 +347,15 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-notes-title {
                 margin: 0 0 1mm;
-                font-size: 12pt;
-                line-height: 1.5;
+                font-size: var(--ps-header-size);
+                font-weight: var(--ps-header-weight);
+                line-height: 1.4;
               }
               .measurement-preview-notes {
                 border: 1px solid #111;
                 padding: 1mm 1.5mm;
-                font-size: 10pt;
-                line-height: 1.5;
+                font-size: var(--ps-table-size);
+                line-height: 1.45;
                 font-weight: 700;
                 white-space: pre-wrap;
                 overflow-wrap: anywhere;
@@ -292,9 +370,9 @@ export default function MeasurementPreviewModal({
                 font: 8.5pt/1.3 Arial, sans-serif;
               }
               @media (max-width: 700px) {
-                .measurement-preview-page {
+                .measurement-print-sheet {
                   width: 100%;
-                  min-height: calc(210mm - 8px);
+                  min-height: 0;
                 }
                 .measurement-preview-header {
                   grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
@@ -319,7 +397,8 @@ export default function MeasurementPreviewModal({
                 }
               }
             `}</style>
-            <div className="measurement-preview-page">
+            <div className="measurement-print-sheet" ref={sheetRef}>
+              <div className="measurement-preview-page">
               <div className="measurement-preview-header">
                 <div className="measurement-preview-meta">
                   {previewMetaRows.map(([label, value]) => (
@@ -353,7 +432,7 @@ export default function MeasurementPreviewModal({
                 </section>
                 <section className="measurement-preview-section">
                   <h4 className="measurement-preview-section-title">{"\u0641\u0631\u0645\u0627\u0626\u0634"}</h4>
-                  {renderPreviewTable(farmaishRows)}
+                  {renderPreviewTable(farmaishRows, "farmaish")}
                 </section>
               </div>
 
@@ -367,7 +446,15 @@ export default function MeasurementPreviewModal({
               <div className="measurement-preview-footer">
                 Need a professional app or website for your business? Contact on WhatsApp: 03245020658
               </div>
+              </div>
             </div>
+            {contentOverflows ? (
+              <div className="measurement-print-fit-warning" role="alert">
+                ⚠ This measurement slip does not fit the selected paper size — printing will
+                clip the bottom. Increase the paper size, reduce margins, or lower the font
+                sizes in Settings → Print Settings.
+              </div>
+            ) : null}
           </div>
 
           <div

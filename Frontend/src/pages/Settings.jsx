@@ -9,6 +9,7 @@ import {
 } from "../services/api";
 import RecycleBinSection from "./RecycleBinSection";
 import ProfessionalFooter from "../components/ProfessionalFooter.jsx";
+import PrintSettingsSection from "../components/PrintSettingsSection.jsx";
 import { useShop } from "../contexts/ShopContext";
 import { useAuth } from "../contexts/AuthContext";
 import { FaSignOutAlt } from "react-icons/fa";
@@ -438,6 +439,9 @@ export default function Settings() {
             </div>
           </div>
         </div>
+
+        {/* SECTION: Print Settings (measurement-slip paper, margins, fonts) */}
+        <PrintSettingsSection />
 
         <div className="collapsible-card" style={{ marginTop: 16 }}>
           <div className="collapsible-header" onClick={() => setAccountOpen((prev) => !prev)}>

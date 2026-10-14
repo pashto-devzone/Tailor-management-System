@@ -60,6 +60,7 @@ export const defaultMeasurementDetails = {
   shalwar: {
     style: "",
     additional_pocket: "",
+    comment: "",
   },
   // NEW: Button + Kaaj design values stored inside measurement_details
   button_design: {
@@ -525,7 +526,8 @@ export const getFarmaishRows = (details) => {
 
   // شلوار
   if (safe(d.shalwar?.style)) {
-    push("شلوار", d.shalwar.style);
+    const shalwarComment = safe(d.shalwar?.comment) ? ` (${d.shalwar.comment})` : "";
+    push("شلوار", d.shalwar.style + shalwarComment);
   }
 
   // دامن

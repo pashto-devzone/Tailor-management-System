@@ -53,6 +53,7 @@ const silaiOptions = [
 ];
 const shalwarOptions = [
   "نارمل شلوار",
+  "فٹ شلوار",
   "پٹیالہ شلوار",
   "فل پٹیالہ شلوار",
   "پینٹ شلوار (جیب والی)",
@@ -1006,6 +1007,10 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                     ) : (
                       renderSummaryCard(details.shalwar.style, () => expandGroup("shalwar"))
                     )}
+                    <label className="form-field" style={{ marginTop: 8 }}>
+                      <span>شلوار کے بارے میں نوٹ</span>
+                      <input type="text" className="text-input-small" placeholder="شلوار کے بارے میں نوٹ" value={details.shalwar.comment} onChange={(event) => handleMeasurementChange("shalwar", "comment", event.target.value)} />
+                    </label>
                     <div className="section-subtitle compact-subtitle">شلوار جیب</div>
 
                     {showAllOptions.shalwarAdditionalPocket ? (
