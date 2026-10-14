@@ -588,6 +588,16 @@ label:last-child {
   border-color: rgba(59, 130, 246, 0.18);
 }
 
+.customers-card .table-responsive .table tbody tr {
+  cursor: pointer;
+}
+
+.customers-card .table-responsive .table tbody tr input,
+.customers-card .table-responsive .table tbody tr select,
+.customers-card .table-responsive .table tbody tr textarea {
+  cursor: auto;
+}
+
 .table-responsive {
   overflow-x: auto;
   width: 100%;

@@ -89,16 +89,17 @@ export default function MeasurementPreviewModal({
       : Number.isNaN(new Date(deliveryRaw).getTime())
         ? String(deliveryRaw)
         : new Intl.DateTimeFormat("en-GB").format(new Date(deliveryRaw));
-  const previewMetaRows = [
+  const kareegarName = details.kareegar?.name;
+  const kareegarRow = ["\u06a9\u0627\u0631\u06cc\u06af\u0631:", safe(kareegarName) ? kareegarName : "\u00A0"];
+  const filteredRows = [
     ["\u06af\u0627\u06c1\u06a9:", customer?.name],
-    ["\u0641\u0648\u0646 \u0646\u0645\u0628\u0631:", customer?.phone],
     ["Serial:", customer?.serial_number],
-    ["Order Number:", order?.order_number],
-    ["Date:", dateLabel],
+    ["B. Date:", dateLabel],
     ["Delivery:", deliveryDate],
-    ["Garment Type:", order?.dress_type || measurement?.dress_type],
     ["Suit Quantity:", order?.suit_quantity ?? 1],
+    ["", order?.dress_type || measurement?.dress_type],
   ].filter(([, value]) => safe(value));
+  const previewMetaRows = [kareegarRow, ...filteredRows];
   const renderPreviewTable = (rows, variant) => (
     <div
       className={`measurement-preview-table${variant ? ` measurement-preview-table--${variant}` : ""}`}
@@ -263,15 +264,17 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-meta-value {
                 min-width: 0;
-                overflow-wrap: anywhere;
-                word-break: break-word;
+                overflow-wrap: normal;
+                word-break: normal;
+                hyphens: none;
               }
               .measurement-preview-shop {
                 min-width: 0;
                 direction: rtl;
                 text-align: right;
-                overflow-wrap: anywhere;
-                word-break: break-word;
+                overflow-wrap: normal;
+                word-break: normal;
+                hyphens: none;
               }
               .measurement-preview-shop-name {
                 font-family: Arial, sans-serif;
@@ -279,6 +282,9 @@ export default function MeasurementPreviewModal({
                 font-weight: var(--ps-header-weight);
                 line-height: 1.3;
                 margin-bottom: 1mm;
+                overflow-wrap: normal;
+                word-break: normal;
+                hyphens: none;
               }
               .measurement-preview-shop-detail {
                 font-size: var(--ps-table-size);
@@ -401,13 +407,13 @@ export default function MeasurementPreviewModal({
               <div className="measurement-preview-page">
               <div className="measurement-preview-header">
                 <div className="measurement-preview-meta">
-                  {previewMetaRows.map(([label, value]) => (
+                  {previewMetaRows.map(([label, value], index) => (
                     <div
                       className="measurement-preview-meta-row"
-                      key={label}
+                      key={`${label}-${index}`}
                       data-preview-customer={label === "\u06af\u0627\u06c1\u06a9:" ? "" : undefined}
                     >
-                      <span className="measurement-preview-meta-label">{label}</span>
+                      {label ? <span className="measurement-preview-meta-label">{label}</span> : null}
                       <span className="measurement-preview-meta-value">{value ?? ""}</span>
                     </div>
                   ))}
@@ -416,12 +422,6 @@ export default function MeasurementPreviewModal({
                   <div className="measurement-preview-shop-name">
                     {settings?.shopName || shop?.name || "Tailor Shop"}
                   </div>
-                  {(settings?.address || shop?.address) ? (
-                    <div className="measurement-preview-shop-detail">{"\u067e\u062a\u06c1:"} {settings?.address || shop?.address}</div>
-                  ) : null}
-                  {(settings?.phone || shop?.phone) ? (
-                    <div className="measurement-preview-shop-detail">{"\u062f\u06a9\u0627\u0646 \u0641\u0648\u0646:"} {settings?.phone || shop?.phone}</div>
-                  ) : null}
                 </div>
               </div>
 
@@ -442,10 +442,6 @@ export default function MeasurementPreviewModal({
                   <div className="measurement-preview-notes">{notes}</div>
                 </section>
               ) : null}
-
-              <div className="measurement-preview-footer">
-                Need a professional app or website for your business? Contact on WhatsApp: 03245020658
-              </div>
               </div>
             </div>
             {contentOverflows ? (

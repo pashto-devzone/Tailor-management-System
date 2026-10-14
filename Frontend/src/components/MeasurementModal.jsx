@@ -58,6 +58,7 @@ const shalwarOptions = [
   "فل پٹیالہ شلوار",
   "پینٹ شلوار (جیب والی)",
   "پینٹ شلوار (بغیر جیب)",
+  "لوز شلوار",
 ];
 
 const buildOptionVisibility = (details) => ({
@@ -80,6 +81,7 @@ const buildOptionVisibility = (details) => ({
   baazooCuffSize: !details.baazoo?.cuff_size,
   baazooCuffMotai: !details.baazoo?.cuff_motai,
   patai: !details.patai?.type,
+  pataiDesign: !details.patai?.design,
   bukram: !details.bukram?.type,
   munda: !details.munda?.value,
   silai: !details.silai?.type,
@@ -275,6 +277,16 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
               <span><strong>گاہک:</strong> {customer?.name || selectedCustomer?.name || "نامعلوم"}</span>
               <span><strong>لباس:</strong> {getGarmentDisplayLabel(dressType)}</span>
             </div>
+            <label className="form-field" style={{ marginTop: 8 }}>
+              <span>کاریگر</span>
+              <input
+                type="text"
+                className="text-input-small"
+                placeholder="سلائی کرنے والے کاریگر کا نام"
+                value={details.kareegar?.name ?? ""}
+                onChange={(event) => handleMeasurementChange("kareegar", "name", event.target.value)}
+              />
+            </label>
             {(["coat", "waistcoat", "waist coat"].includes(String(formData.dress_type).toLowerCase())) && (
               <div className="section-card">
                 <h4>{String(formData.dress_type).toLowerCase() === "coat" ? "کوٹ کے ناپ" : "ویسٹ کوٹ کے ناپ"}</h4>
@@ -720,6 +732,51 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                       </label>
                     </div>
 
+                  <div className="section-card">
+                    <h4>بکرم</h4>
+                    {showAllOptions.bukram ? (
+                      renderRadioGroup({
+                        name: "bukram_type",
+                        options: bukramOptions,
+                        selected: details.bukram.type,
+                        onChange: (value) => {
+                          handleMeasurementChange("bukram", "type", value);
+                          handleMeasurementChange("bukram", "value", "");
+                          collapseGroup("bukram");
+                        },
+                      })
+                    ) : (
+                      renderSummaryCard(details.bukram.type, () => expandGroup("bukram"))
+                    )}
+
+                    {details.bukram.type ? (
+                      <div className="conditional-section show">
+                        <label className="section-subtitle">بکرم کی تفصیل</label>
+                        <label className="form-field">
+                          <input
+                            type="text"
+                            placeholder="مثلاً سنگل بکرم / ڈبل بکرم"
+                            value={details.bukram.value}
+                            onChange={(event) => handleMeasurementChange("bukram", "value", event.target.value)}
+                          />
+                        </label>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="section-card">
+                    <h4>منڈا</h4>
+                    <label className="form-field">
+                      <span>منڈا</span>
+                      <input
+                        type="text"
+                        placeholder="منڈا کی مقدار/تفصیل لکھیں"
+                        value={details.munda.value}
+                        onChange={(event) => handleMeasurementChange("munda", "value", event.target.value)}
+                      />
+                    </label>
+                  </div>
+
 
                 </div>
 
@@ -890,49 +947,30 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                         </label>
                       </>
                     ) : null}
-                  </div>
 
-                  <div className="section-card">
-                    <h4>بکرم</h4>
-                    {showAllOptions.bukram ? (
+                    <label className="section-subtitle">پٹائی ڈیزائن</label>
+                    {showAllOptions.pataiDesign ? (
                       renderRadioGroup({
-                        name: "bukram_type",
-                        options: bukramOptions,
-                        selected: details.bukram.type,
+                        name: "patai_design",
+                        options: ["پٹائی نوک گول", "پٹائی نوک والا", "گم پٹائی"],
+                        selected: details.patai.design,
                         onChange: (value) => {
-                          handleMeasurementChange("bukram", "type", value);
-                          handleMeasurementChange("bukram", "value", "");
-                          collapseGroup("bukram");
+                          handleMeasurementChange("patai", "design", value);
+                          collapseGroup("pataiDesign");
                         },
                       })
                     ) : (
-                      renderSummaryCard(details.bukram.type, () => expandGroup("bukram"))
+                      renderSummaryCard(details.patai.design, () => expandGroup("pataiDesign"))
                     )}
 
-                    {details.bukram.type ? (
-                      <div className="conditional-section show">
-                        <label className="section-subtitle">بکرم کی تفصیل</label>
-                        <label className="form-field">
-                          <input
-                            type="text"
-                            placeholder="مثلاً سنگل بکرم / ڈبل بکرم"
-                            value={details.bukram.value}
-                            onChange={(event) => handleMeasurementChange("bukram", "value", event.target.value)}
-                          />
-                        </label>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="section-card">
-                    <h4>منڈا</h4>
-                    <label className="form-field">
-                      <span>منڈا</span>
+                    <label className="form-field" style={{ marginTop: 8 }}>
+                      <span>پٹائی ڈیزائن (دیگر)</span>
                       <input
                         type="text"
-                        placeholder="منڈا کی مقدار/تفصیل لکھیں"
-                        value={details.munda.value}
-                        onChange={(event) => handleMeasurementChange("munda", "value", event.target.value)}
+                        className="text-input-small"
+                        placeholder="اپنی مرضی کا ڈیزائن لکھیں"
+                        value={details.patai.design_comment || ""}
+                        onChange={(event) => handleMeasurementChange("patai", "design_comment", event.target.value)}
                       />
                     </label>
                   </div>

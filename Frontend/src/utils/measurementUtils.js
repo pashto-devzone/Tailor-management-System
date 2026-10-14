@@ -43,6 +43,8 @@ export const defaultMeasurementDetails = {
     type: "",
     // New enhancement field (backward compatible)
     patai_lambai: "",
+    design: "",
+    design_comment: "",
   },
   bukram: {
     type: "",
@@ -70,6 +72,9 @@ export const defaultMeasurementDetails = {
   kaaj_design: {
     type: "", // Double Kaaj | Stud Kaaj | Saada Kaaj
     comment: "", // custom comment value
+  },
+  kareegar: {
+    name: "", // tailor (kareegar) who will stitch
   },
 
   // Keep Urdu label consistency for print
@@ -213,6 +218,9 @@ export const normalizeMeasurementData = (source) => {
     }
 
     merged.patai.patai_lambai = merged.patai.patai_lambai || "";
+    merged.patai.design = merged.patai.design || "";
+    merged.patai.design_comment = merged.patai.design_comment || "";
+    merged.kareegar = { name: merged.kareegar?.name || "" };
 
     return merged;
   }
@@ -254,6 +262,9 @@ export const normalizeMeasurementData = (source) => {
     }
 
     merged.patai.patai_lambai = merged.patai.patai_lambai || "";
+    merged.patai.design = merged.patai.design || "";
+    merged.patai.design_comment = merged.patai.design_comment || "";
+    merged.kareegar = { name: merged.kareegar?.name || "" };
 
     return merged;
   }
@@ -281,6 +292,9 @@ export const normalizeMeasurementData = (source) => {
   }
 
   merged.patai.patai_lambai = merged.patai.patai_lambai || "";
+  merged.patai.design = merged.patai.design || "";
+  merged.patai.design_comment = merged.patai.design_comment || "";
+  merged.kareegar = { name: merged.kareegar?.name || "" };
 
   return merged;
 };
@@ -453,6 +467,15 @@ export const getFarmaishRows = (details) => {
   }
   if (safe(d.patai?.patai_lambai)) {
     push("پٹائی لمبائی", d.patai.patai_lambai);
+  }
+  const pataiDesign = safe(d.patai?.design) ? d.patai.design : "";
+  const pataiDesignComment = safe(d.patai?.design_comment) ? d.patai.design_comment : "";
+  if (pataiDesign && pataiDesignComment) {
+    push("پٹائی ڈیزائن", `${pataiDesign} (${pataiDesignComment})`);
+  } else if (pataiDesign) {
+    push("پٹائی ڈیزائن", pataiDesign);
+  } else if (pataiDesignComment) {
+    push("پٹائی ڈیزائن", pataiDesignComment);
   }
 
   // سامنے پاکٹ
