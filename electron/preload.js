@@ -26,6 +26,11 @@ const safeOn = (channel, listener) => {
 };
 
 contextBridge?.exposeInMainWorld('electronAPI', {
+  auth: {
+    load: () => safeInvoke('auth:load'),
+    save: (session) => safeInvoke('auth:save', session),
+    clear: () => safeInvoke('auth:clear'),
+  },
   printCurrentPage: (printConfig) => safeInvoke('print:current-page', printConfig),
   printCurrentPagePdf: (printConfig) => safeInvoke('print:current-page-pdf', printConfig),
   update: {

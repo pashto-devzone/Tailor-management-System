@@ -1,4 +1,4 @@
-const db = require("../config/db");
+﻿const db = require("../config/operationalDb");
 
 exports.getNextOrderNumber = async (orderNumberStart, storeId = 1) => {
   const parsed = Number(String(orderNumberStart ?? "").trim());
@@ -11,3 +11,4 @@ exports.getNextOrderNumber = async (orderNumberStart, storeId = 1) => {
   const max = Math.max(...numbers);
   return String(Math.max(max + 1, start));
 };
+

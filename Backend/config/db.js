@@ -1,6 +1,7 @@
-const fs = require("fs");
+﻿const fs = require("fs");
 const path = require("path");
 const { Pool } = require("pg");
+const { AsyncLocalStorage } = require("async_hooks");
 
 /**
  * Configuration comes from the environment.
@@ -25,6 +26,51 @@ loadEnvFile();
 const isProduction = process.env.NODE_ENV === "production" || process.env.ELECTRON_PRODUCTION === "1";
 const dbPath = process.env.TAILOR_DB_PATH
   || path.join(__dirname, "..", "database", "tailor.db");
+
+/**
+ * AsyncLocalStorage for per-request user context propagation.
+ * This prevents race conditions where concurrent requests
+ * could read each other's userId from a shared module-level variable.
+ */
+const userContextStorage = new AsyncLocalStorage();
+
+/** Set the current user ID for database routing (within current async context). */
+exports.setUserContext = (userId) => {
+  userContextStorage.enterWith({ userId });
+};
+
+/** Get the current user ID from the async context. */
+exports.getUserContext = () => {
+  const store = userContextStorage.getStore();
+  return store ? store.userId : null;
+};
+
+/** Check if user has personal Supabase config. */
+exports.hasPersonalDb = async () => {
+  try {
+    const uid = exports.getUserContext();
+    if (!uid) return false;
+    const model = require("../models/userSupabaseConfigModel");
+    return await model.hasPersonalDb(uid);
+  } catch {
+    return false;
+  }
+};
+
+/** Get personal Supabase client for current user. */
+exports.getPersonalDbClient = async () => {
+  if (!await exports.hasPersonalDb()) return null;
+
+  try {
+    const uid = exports.getUserContext();
+    const model = require("../models/userSupabaseConfigModel");
+    const config = await model.getConfigByUserId(uid);
+    if (!config || !config.anon_key) return null;
+    return require("..").personalDb.getClient(config);
+  } catch {
+    return null;
+  }
+};
 const migrationPath = path.join(__dirname, "..", "migrations", "001_initial.sql");
 
 let localDb = null;
@@ -135,14 +181,16 @@ function cloudPrepare(sql) {
 }
 
 function prepare(sql) {
-  // Once a cloud pool exists it stays authoritative: routing queries to the
-  // local SQLite handle after a transient cloud error would fail anyway
-  // (localDb is never initialized in that mode) and would hide real
-  // PostgreSQL failures from /health and from every API route.
+  if (cloudPool && cloudOnline) {
+    return cloudPrepare(sql);
+  }
+  if (localDb) {
+    return localPrepare(sql);
+  }
   if (cloudPool) {
     return cloudPrepare(sql);
   }
-  return localPrepare(sql);
+  throw new Error("Database is unavailable");
 }
 
 // Existing local databases predate columns added later to 001_initial.sql
@@ -193,6 +241,7 @@ async function initialize() {
     }
     cloudPool = new Pool({
       connectionString: process.env.DATABASE_URL,
+      options: "-c client_encoding=UTF8",
       connectionTimeoutMillis: Number(process.env.PGCONNECT_TIMEOUT_MS || 3000),
       max: Number(process.env.PGPOOL_MAX || 5),
     });
@@ -208,6 +257,7 @@ async function initialize() {
     try {
       cloudPool = new Pool({
         connectionString: process.env.DATABASE_URL,
+        options: "-c client_encoding=UTF8",
         connectionTimeoutMillis: Number(process.env.PGCONNECT_TIMEOUT_MS || 3000),
         max: Number(process.env.PGPOOL_MAX || 5),
       });
@@ -252,10 +302,81 @@ async function close() {
   SQL = null;
 }
 
+exports.getUserContext = () => {
+  const store = userContextStorage.getStore();
+  return store ? store.userId : null;
+};
+
+exports.getOperationalPool = async () => {
+  const uid = exports.getUserContext();
+  if (uid) {
+    try {
+      const model = require("../models/userSupabaseConfigModel");
+      if (await model.hasPersonalDb(uid)) {
+        const config = await model.getConfigByUserId(uid);
+        if (config && config.connection_host && config.encrypted_password) {
+          const personalDb = require("../services/personalDb");
+          const { decrypt } = require("../helpers/encryption");
+          const cfg = {
+            host: config.connection_host,
+            port: config.connection_port,
+            database: config.connection_database,
+            username: config.connection_username,
+            password: decrypt(config.encrypted_password),
+            sslMode: config.ssl_mode || "no-verify",
+          };
+          return personalDb.getPool(cfg, uid);
+        }
+      }
+    } catch (err) {
+      console.warn("[db] personal pool resolution failed:", err.message);
+    }
+  }
+  if (cloudPool) return cloudPool;
+  return null;
+};
+
+function operationalPrepare(sql) {
+  let index = 0;
+  const statement = sql.replace(/\?/g, () => `$${++index}`);
+  async function resolve() {
+    const pool = await exports.getOperationalPool();
+    if (pool) return { type: "pg", pool };
+    if (localDb) return { type: "local" };
+    throw new Error("Operational database is unavailable");
+  }
+  return {
+    async run(...params) {
+      const r = await resolve();
+      if (r.type === "local") return localPrepare(sql).run(...params);
+      const result = await r.pool.query(statement, params);
+      return { changes: result.rowCount, lastInsertRowid: result.rows[0]?.id == null ? undefined : Number(result.rows[0].id) };
+    },
+    async get(...params) {
+      const r = await resolve();
+      if (r.type === "local") return localPrepare(sql).get(...params);
+      const result = await r.pool.query(statement, params);
+      return result.rows[0] || null;
+    },
+    async all(...params) {
+      const r = await resolve();
+      if (r.type === "local") return localPrepare(sql).all(...params);
+      const result = await r.pool.query(statement, params);
+      return result.rows;
+    },
+  };
+}
+
+exports.prepareOperational = operationalPrepare;
+
 module.exports = {
   initialize,
   close,
+  setUserContext: exports.setUserContext,
+  getUserContext: exports.getUserContext,
+  getOperationalPool: exports.getOperationalPool,
   prepare,
+  prepareOperational: exports.prepareOperational,
   get: (sql, params = []) => prepare(sql).get(...params),
   all: (sql, params = []) => prepare(sql).all(...params),
   run: (sql, params = []) => prepare(sql).run(...params),
@@ -276,3 +397,5 @@ module.exports = {
     return cloudPool;
   },
 };
+
+

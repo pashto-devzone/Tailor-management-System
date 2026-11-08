@@ -1,4 +1,6 @@
+
 const orderModel = require("../models/orderModel");
+const { setUserContext } = require("../config/db");
 const customerModel = require("../models/customerModel");
 const budgetModel = require("../models/budgetModel");
 const settingsModel = require("../models/settingsModel");
@@ -20,11 +22,15 @@ function orderInput(body) {
 
 exports.createOrder = async (req, res) => {
   const storeId = req.storeId;
+  const userId = req.user?.id;
+  setUserContext(userId);
+
   const input = orderInput(req.body);
   if (!input.customer_id || !input.dress_type || input.total_amount == null || input.paid_amount == null || !input.delivery_date) {
     return res.status(400).json({ message: "All fields required: customer_id, dress_type, price, advance, delivery_date" });
   }
   if (!await customerModel.getCustomerById(input.customer_id, storeId)) return res.status(404).json({ message: "Customer not found" });
+
   const total = Number(input.total_amount);
   const paid = Number(input.paid_amount);
   const quantity = Number(input.suit_quantity ?? 1);
@@ -61,7 +67,7 @@ exports.getOrders = async (req, res) => {
       : await orderModel.getOrders(req.storeId);
     return res.json(orders);
   } catch (error) {
-    return res.status(500).json({ message: "Order search failed" });
+    return res.status(500).json({ message: "Failed to load orders." });
   }
 };
 

@@ -1,4 +1,5 @@
 const customerModel = require("../models/customerModel");
+const { setUserContext, hasPersonalDb } = require("../config/db");
 
 function requireRole(req, res, next, allowedRoles) {
   if (!req.user) {

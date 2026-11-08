@@ -3,14 +3,16 @@ import axios from "axios";
 const baseOrigin = import.meta.env.VITE_API_URL || "http://localhost:5000";
 const baseURL = baseOrigin + "/api";
 const v1BaseURL = baseOrigin + "/api/v1";
+let authToken = null;
+
+export const setAuthToken = (token) => {
+  authToken = token || null;
+};
 
 const getAuthHeader = () => {
   try {
-    const stored = localStorage.getItem("tms_auth");
-    if (stored) {
-      const { token } = JSON.parse(stored);
-      if (token) return { Authorization: `Bearer ${token}` };
-    }
+    const token = authToken || (!window.electronAPI && JSON.parse(localStorage.getItem("tms_auth") || "null")?.token);
+    if (token) return { Authorization: `Bearer ${token}` };
   } catch (_) {}
   return {};
 };
@@ -80,6 +82,9 @@ api.interceptors.response.use(
   (error) => {
     const friendlyMessage = handleApiError(error);
     error.friendlyMessage = friendlyMessage;
+    if (error.response?.status === 401) {
+      window.dispatchEvent(new Event("tms-auth-invalid"));
+    }
     return Promise.reject(error);
   },
 );
@@ -142,7 +147,23 @@ export const cleanupRecycleBin = () => api.post("/recycle-bin/cleanup");
 
 // Auth
 export const login = (email, password) => api.post("/auth/login", { email, password });
-export const register = (name, email, password, shopName) => api.post("/auth/register", { name, email, password, shopName });
+export const register = (name, email, password, shopName, supabaseConfig) =>
+  api.post("/auth/register", {
+    name,
+    email,
+    password,
+    shopName,
+    projectUrl: supabaseConfig?.projectUrl,
+    projectName: supabaseConfig?.projectName,
+    anonKey: supabaseConfig?.anonKey,
+    connectionString: supabaseConfig?.connectionString,
+    connectionHost: supabaseConfig?.connectionHost,
+    connectionPort: supabaseConfig?.connectionPort,
+    connectionDatabase: supabaseConfig?.connectionDatabase,
+    connectionUsername: supabaseConfig?.connectionUsername,
+    connectionPassword: supabaseConfig?.connectionPassword,
+    sslMode: supabaseConfig?.sslMode,
+  });
 export const logout = () => api.post("/auth/logout");
 export const getMe = () => api.get("/auth/me");
 export const changePassword = (currentPassword, newPassword) => api.post("/auth/change-password", { currentPassword, newPassword });
@@ -166,5 +187,11 @@ export const restoreBackup = (file) => {
 export const v1 = apiV1;
 
 export { apiV1 };
+
+// User Supabase configuration (personal project connection)
+export const getUserSupabaseConfig = () => api.get("/user/supabase-config");
+export const saveUserSupabaseConfig = (data) => api.post("/user/supabase-config", data);
+export const testSupabaseConnection = (data) => api.post("/user/supabase-config/test", data);
+export const disconnectUserSupabase = () => api.delete("/user/supabase-config");
 
 export default api;

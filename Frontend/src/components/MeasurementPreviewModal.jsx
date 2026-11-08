@@ -4,6 +4,7 @@ import {
   getMeasurementLabel,
   getOrderedMeasurementEntries,
   normalizeMeasurementData,
+  repairMojibakeText,
 } from "../utils/measurementUtils";
 import { normalizePrintSettings, printSettingsCssVars } from "../utils/printConfig";
 
@@ -77,29 +78,26 @@ export default function MeasurementPreviewModal({
     : details.notes != null && String(details.notes).trim() !== ""
       ? details.notes
       : measurement?.measurement_notes ?? "";
-  const notes = String(noteValue);
-  const dateLabel = new Intl.DateTimeFormat("en-GB").format(new Date());
-  const deliveryRaw = order?.delivery_date || measurement?.delivery_date || measurement?.deliveryDate ||
-    customer?.delivery_date || customer?.latest_order?.delivery_date || "";
-  const isoDeliveryDate = String(deliveryRaw).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  const deliveryDate = !deliveryRaw
-    ? ""
-    : isoDeliveryDate
-      ? `${isoDeliveryDate[3]}/${isoDeliveryDate[2]}/${isoDeliveryDate[1]}`
-      : Number.isNaN(new Date(deliveryRaw).getTime())
-        ? String(deliveryRaw)
-        : new Intl.DateTimeFormat("en-GB").format(new Date(deliveryRaw));
+  const notes = repairMojibakeText(String(noteValue));
+  const formatDate = (value) => {
+    if (!value) return "";
+    const isoDate = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoDate) return `${isoDate[3]}/${isoDate[2]}/${isoDate[1]}`;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? String(value) : new Intl.DateTimeFormat("en-GB").format(date);
+  };
+  const bookingDate = formatDate(order?.created_at || measurement?.created_at || measurement?.date);
+  const deliveryDate = formatDate(order?.delivery_date);
   const kareegarName = details.kareegar?.name;
   const kareegarRow = ["\u06a9\u0627\u0631\u06cc\u06af\u0631:", safe(kareegarName) ? kareegarName : "\u00A0"];
   const filteredRows = [
-    ["\u06af\u0627\u06c1\u06a9:", customer?.name],
-    ["Serial:", customer?.serial_number],
-    ["B. Date:", dateLabel],
-    ["Delivery:", deliveryDate],
+    ["\u06af\u0627\u06c1\u06a9:", customer?.name ?? "\u00A0"],
+    ["Serial:", customer?.serial_number ?? "\u00A0"],
+    ["B. Date:", bookingDate || "\u00A0"],
     ["Suit Quantity:", order?.suit_quantity ?? 1],
-    ["", order?.dress_type || measurement?.dress_type],
-  ].filter(([, value]) => safe(value));
-  const previewMetaRows = [kareegarRow, ...filteredRows];
+    ["Delivery:", deliveryDate || "\u00A0"],
+    [kareegarRow[0], kareegarRow[1]],
+  ];
   const renderPreviewTable = (rows, variant) => (
     <div
       className={`measurement-preview-table${variant ? ` measurement-preview-table--${variant}` : ""}`}
@@ -213,7 +211,7 @@ export default function MeasurementPreviewModal({
                 min-height: 0;
                 background: #fff;
                 color: #111;
-                font-family: "Noto Nastaliq Urdu", "Nirmala UI", Arial, sans-serif;
+                font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Nirmala UI", serif;
               }
               .measurement-print-fit-warning {
                 box-sizing: border-box;
@@ -230,30 +228,27 @@ export default function MeasurementPreviewModal({
                 .measurement-print-fit-warning { display: none !important; }
               }
               .measurement-preview-header {
-                display: grid;
-                grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
-                gap: 3mm;
-                align-items: start;
+                display: block;
                 direction: ltr;
-                padding-bottom: 2mm;
+                padding-bottom: 1mm;
                 border-bottom: 1px solid #111;
-                line-height: 1.65;
+                line-height: 1.35;
                 min-width: 0;
               }
               .measurement-preview-meta {
                 display: grid;
-                grid-template-columns: repeat(2, minmax(0, 1fr));
-                gap: 1mm 1.5mm;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 0.6mm 1mm;
                 min-width: 0;
                 direction: ltr;
                 font-family: Arial, sans-serif;
-                font-size: var(--ps-table-size);
-                line-height: 1.3;
+                font-size: max(9pt, var(--ps-table-size));
+                line-height: 1.25;
               }
               .measurement-preview-meta-row {
                 display: grid;
                 grid-template-columns: max-content minmax(0, 1fr);
-                gap: 1.5mm;
+                gap: 1mm;
                 min-width: 0;
                 direction: ltr;
                 unicode-bidi: isolate;
@@ -271,20 +266,26 @@ export default function MeasurementPreviewModal({
               .measurement-preview-shop {
                 min-width: 0;
                 direction: rtl;
-                text-align: right;
+                text-align: center;
                 overflow-wrap: normal;
                 word-break: normal;
                 hyphens: none;
               }
               .measurement-preview-shop-name {
                 font-family: Arial, sans-serif;
-                font-size: var(--ps-header-size);
-                font-weight: var(--ps-header-weight);
+                font-size: max(11pt, calc(var(--ps-header-size) + 1pt));
+                font-weight: 800;
                 line-height: 1.3;
-                margin-bottom: 1mm;
+                margin-bottom: 1.5mm;
                 overflow-wrap: normal;
                 word-break: normal;
                 hyphens: none;
+              }
+              .measurement-preview-kareegar {
+                display: contents;
+              }
+              .measurement-preview-kareegar-label {
+                font-weight: 700;
               }
               .measurement-preview-shop-detail {
                 font-size: var(--ps-table-size);
@@ -294,8 +295,8 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-body {
                 display: grid;
-                grid-template-columns: minmax(0, 35fr) minmax(0, 65fr);
-                gap: 2mm;
+                grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
+                gap: 1.5mm;
                 flex: 1 1 auto;
                 min-height: 0;
               }
@@ -322,7 +323,7 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-row {
                 display: grid;
-                grid-template-columns: 38% 62%;
+                grid-template-columns: minmax(0, 44%) minmax(0, 56%);
                 min-height: 0;
               }
               .measurement-preview-label,
@@ -332,10 +333,10 @@ export default function MeasurementPreviewModal({
                 align-items: center;
                 min-width: 0;
                 border: 1px solid #111;
-                padding: 0.6mm 1mm;
+                padding: 0.75mm 1mm;
                 font-size: var(--ps-table-size);
                 line-height: 1.35;
-                font-weight: 700;
+                font-weight: 750;
                 overflow-wrap: anywhere;
                 word-break: break-word;
               }
@@ -362,7 +363,7 @@ export default function MeasurementPreviewModal({
                 padding: 1mm 1.5mm;
                 font-size: var(--ps-table-size);
                 line-height: 1.45;
-                font-weight: 700;
+                font-weight: 750;
                 white-space: pre-wrap;
                 overflow-wrap: anywhere;
                 word-break: break-word;
@@ -380,9 +381,6 @@ export default function MeasurementPreviewModal({
                   width: 100%;
                   min-height: 0;
                 }
-                .measurement-preview-header {
-                  grid-template-columns: minmax(0, 1fr) minmax(0, 0.72fr);
-                }
                 .measurement-preview-meta {
                   grid-template-columns: minmax(0, 1fr);
                 }
@@ -396,18 +394,23 @@ export default function MeasurementPreviewModal({
                   box-shadow: none !important;
                 }
                 .measurement-preview-header {
-                  grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr) !important;
+                  display: block !important;
                 }
                 .measurement-preview-meta {
-                  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+                  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
                 }
               }
             `}</style>
             <div className="measurement-print-sheet" ref={sheetRef}>
               <div className="measurement-preview-page">
               <div className="measurement-preview-header">
+                <div className="measurement-preview-shop">
+                  <div className="measurement-preview-shop-name">
+                    {settings?.shopName || shop?.name || "Tailor Shop"}
+                  </div>
+                </div>
                 <div className="measurement-preview-meta">
-                  {previewMetaRows.map(([label, value], index) => (
+                  {filteredRows.map(([label, value], index) => (
                     <div
                       className="measurement-preview-meta-row"
                       key={`${label}-${index}`}
@@ -417,11 +420,6 @@ export default function MeasurementPreviewModal({
                       <span className="measurement-preview-meta-value">{value ?? ""}</span>
                     </div>
                   ))}
-                </div>
-                <div className="measurement-preview-shop">
-                  <div className="measurement-preview-shop-name">
-                    {settings?.shopName || shop?.name || "Tailor Shop"}
-                  </div>
                 </div>
               </div>
 
@@ -503,5 +501,3 @@ export default function MeasurementPreviewModal({
 }
 
 // prop-types removed to avoid missing dependency.
-
-

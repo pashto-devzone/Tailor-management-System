@@ -1,11 +1,11 @@
 {
   "name": "tailor-management-system-desktop",
-  "version": "1.5.7",
+  "version": "1.6.2",
   "private": true,
   "main": "electron/main.js",
   "repository": {
     "type": "git",
-    "url": "https://github.com/pashto-devzone/pashto-devzone.git"
+    "url": "https://github.com/pashto-devzone/Tailor-management-System.git"
   },
   "scripts": {
     "electron-dev": "node electron/run.js .",

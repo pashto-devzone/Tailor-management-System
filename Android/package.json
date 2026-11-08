@@ -1,6 +1,6 @@
 {
   "name": "tailor-management-system-android",
-  "version": "1.0.0",
+  "version": "1.6.2",
   "description": "Tailor Management System - Android app (Expo)",
   "private": true,
   "main": "index.js",

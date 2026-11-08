@@ -51,7 +51,9 @@ export default function App() {
           setShop(cached ? JSON.parse(cached) : { name: "Offline mode" });
           setCloudUnavailable(true);
         } else {
-          setShop(null);
+          const userId = user?.user?.id;
+          const skipped = userId && localStorage.getItem("tms_shop_skipped_" + userId);
+          setShop(skipped ? { skipped: true, name: "Pending setup" } : null);
         }
       })
         .finally(() => setShopLoading(false));
@@ -76,7 +78,17 @@ export default function App() {
   }
 
   if (!shop) {
-    return <Setup />;
+    return (
+      <div className="app-shell">
+        <main className="page-content">
+          <Routes>
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/setup" element={<Setup />} />
+            <Route path="*" element={<Setup />} />
+          </Routes>
+        </main>
+      </div>
+    );
   }
 
   return (

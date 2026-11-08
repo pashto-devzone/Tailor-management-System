@@ -1,4 +1,4 @@
-const db = require("../config/db");
+﻿const db = require("../config/operationalDb");
 
 const decode = (row) => row && ({
   ...row,
@@ -46,3 +46,4 @@ exports.getDeletedMeasurementsForRecycleBin = async (storeId = 1) =>
 
 exports.deleteMeasurementForever = async (id, storeId = 1) =>
   db.prepare("DELETE FROM measurements WHERE id = ? AND store_id = ?").run(id, storeId);
+

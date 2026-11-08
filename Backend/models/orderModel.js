@@ -1,4 +1,5 @@
-const db = require("../config/db");
+﻿const db = require("../config/operationalDb");
+
 const settingsModel = require("./settingsModel");
 const orderNumberModel = require("./orderNumberModel");
 
@@ -30,21 +31,20 @@ exports.createOrder = async (data) => {
     delivery_date, status, userId,
   );
 };
-
 const orderSelect = `SELECT o.*, c.name AS customer_name, c.phone AS customer_phone
   FROM orders o LEFT JOIN customers c ON o.customer_id = c.id`;
 
 exports.getOrders = async (storeId = 1) => {
   await backfillMissingOrderNumbers(storeId);
   return db.prepare(
-    `${orderSelect} WHERE o.is_deleted = FALSE AND o.store_id = ? AND (c.is_deleted IS NULL OR c.is_deleted = FALSE) ORDER BY o.created_at DESC`,
+    `${orderSelect} WHERE o.is_deleted = FALSE AND o.store_id = ? AND (c.is_deleted IS NULL OR c.is_deleted = FALSE) ORDER BY o.created_at DESC, o.id DESC`,
   ).all(storeId);
 };
 
 exports.getOrdersByCustomerId = async (customer_id, storeId = 1) => {
   await backfillMissingOrderNumbers(storeId);
   return db.prepare(
-    `${orderSelect} WHERE o.customer_id = ? AND o.store_id = ? AND o.is_deleted = FALSE AND (c.is_deleted IS NULL OR c.is_deleted = FALSE) ORDER BY o.created_at DESC`,
+    `${orderSelect} WHERE o.customer_id = ? AND o.store_id = ? AND o.is_deleted = FALSE AND (c.is_deleted IS NULL OR c.is_deleted = FALSE) ORDER BY o.created_at DESC, o.id DESC`,
   ).all(customer_id, storeId);
 };
 
@@ -90,7 +90,7 @@ exports.searchOrders = async (q, storeId = 1) => {
   return db.prepare(
     `${orderSelect} WHERE o.is_deleted = FALSE AND o.store_id = ? AND (c.is_deleted IS NULL OR c.is_deleted = FALSE)
       AND (LOWER(c.name) LIKE LOWER(?) OR LOWER(c.phone) LIKE LOWER(?) OR LOWER(o.order_number) LIKE LOWER(?))
-      ORDER BY o.created_at DESC`,
+      ORDER BY o.created_at DESC, o.id DESC`,
   ).all(storeId, like, like, like);
 };
 

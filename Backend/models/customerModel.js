@@ -1,4 +1,4 @@
-const db = require("../config/db");
+﻿const db = require("../config/operationalDb");
 
 const parseSerialNumber = (serial) => {
   if (serial === undefined || serial === null || String(serial).trim() === "") return null;
@@ -55,3 +55,4 @@ exports.getDeletedCustomersForRecycleBin = async (storeId = 1) => db.prepare(
 
 exports.deleteCustomerForever = async (id, storeId = 1) =>
   db.prepare("DELETE FROM customers WHERE id = ? AND store_id = ?").run(id, storeId);
+

@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useShop } from "../contexts/ShopContext";
+import { useAuth } from "../contexts/AuthContext";
 
 export default function Setup() {
-  const { shop, loading, saveShop } = useShop();
+  const { shop, loading, saveShop, setShop } = useShop();
+  const { user } = useAuth();
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [address, setAddress] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -30,10 +33,29 @@ export default function Setup() {
       await saveShop({ name, phone, address });
       navigate("/dashboard", { replace: true });
     } catch (err) {
-      setError("Error saving setup");
+      setError(err?.friendlyMessage || err?.response?.data?.message || "Error saving setup");
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSkip = () => {
+    setSkipping(true);
+    setError("");
+    try {
+      const userId = user?.user?.id;
+      if (userId) {
+        localStorage.setItem(`tms_shop_skipped_${userId}`, "1");
+      }
+      setShop({ skipped: true, name: "Pending setup" });
+      navigate("/dashboard", { replace: true });
+    } finally {
+      setSkipping(false);
+    }
+  };
+
+  const handleBack = () => {
+    navigate("/settings", { replace: true });
   };
 
   if (loading) {
@@ -65,8 +87,14 @@ export default function Setup() {
               <textarea value={address} onChange={(e) => setAddress(e.target.value)} required placeholder="Shop address" />
             </label>
             {error && <p className="message error">{error}</p>}
-            <div className="modal-actions">
-              <button type="submit" className="button primary" disabled={saving}>
+            <div className="modal-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <button type="button" className="button secondary" onClick={handleBack} disabled={saving || skipping}>
+                Back
+              </button>
+              <button type="button" className="button secondary" onClick={handleSkip} disabled={saving || skipping}>
+                {skipping ? "Skipping..." : "Skip for Now"}
+              </button>
+              <button type="submit" className="button primary" disabled={saving || skipping}>
                 {saving ? "Saving..." : "Complete Setup"}
               </button>
             </div>

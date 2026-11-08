@@ -1,6 +1,6 @@
 {
   "name": "tailor-shop-backend",
-  "version": "1.0.0",
+  "version": "1.6.2",
   "description": "Tailor Shop Management System backend with Node.js, Express, and PostgreSQL.",
   "main": "server.js",
   "engines": {
@@ -23,6 +23,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",

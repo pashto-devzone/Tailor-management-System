@@ -1,4 +1,4 @@
-export const defaultMeasurementDetails = {
+﻿export const defaultMeasurementDetails = {
   measurements: {
     lambai: "",
     bazu: "",
@@ -76,22 +76,120 @@ export const defaultMeasurementDetails = {
   kareegar: {
     name: "", // tailor (kareegar) who will stitch
   },
+  additional_comments: {
+    gala: "",
+    daman: "",
+    other: "",
+  },
 
   // Keep Urdu label consistency for print
   notes: "",
   cloth_type: "شلوار قمیض",
 };
 
+// Older builds wrote some hardcoded Urdu labels after decoding UTF-8 as
+// Latin-1. Repair only strings containing the characteristic mojibake markers;
+// ordinary user-entered text is returned unchanged.
+const repairMojibake = (value) => {
+  if (typeof value !== "string" || !/[ÃÂØÙÚÛ]/.test(value)) return value;
+  try {
+    const cp1252Bytes = {
+      "„": 0x84, "…": 0x85, "†": 0x86, "‡": 0x87, "ˆ": 0x88, "‰": 0x89,
+      "Š": 0x8a, "‹": 0x8b, "Œ": 0x8c, "Ž": 0x8e, "‘": 0x91, "’": 0x92,
+      "“": 0x93, "”": 0x94, "•": 0x95, "–": 0x96, "—": 0x97, "˜": 0x98,
+      "™": 0x99, "š": 0x9a, "›": 0x9b, "œ": 0x9c, "ž": 0x9e, "Ÿ": 0x9f,
+    };
+    const bytes = Uint8Array.from([...value].map((char) => cp1252Bytes[char] ?? char.charCodeAt(0)));
+    const repaired = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return repaired.includes("\uFFFD") ? value : repaired;
+  } catch {
+    return value;
+  }
+};
+
+const repairMojibakeDeep = (value) => {
+  if (typeof value === "string") return repairMojibake(value);
+  if (Array.isArray(value)) return value.map(repairMojibakeDeep);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, repairMojibakeDeep(item)]));
+};
+
+const clearInvalidDependentValues = (details) => {
+  const cleaned = {
+    ...details,
+    gala: { ...defaultMeasurementDetails.gala, ...(details.gala || {}) },
+    pocket: { ...defaultMeasurementDetails.pocket, ...(details.pocket || {}) },
+    baazoo: { ...defaultMeasurementDetails.baazoo, ...(details.baazoo || {}) },
+    patai: { ...defaultMeasurementDetails.patai, ...(details.patai || {}) },
+    bukram: { ...defaultMeasurementDetails.bukram, ...(details.bukram || {}) },
+    silai: { ...defaultMeasurementDetails.silai, ...(details.silai || {}) },
+  };
+
+  if (cleaned.gala.type !== "کالر") {
+    cleaned.gala.collar_type = "";
+    cleaned.gala.collar_size = "";
+  }
+  if (!["Half Bain", "Full Bain", "بین", "Ban"].includes(cleaned.gala.type)) {
+    cleaned.gala.bain_type = "";
+    cleaned.gala.bain_size = "";
+  }
+  if (
+    cleaned.gala.collar_type !== "گول کالر" &&
+    cleaned.gala.collar_type !== "سیدھا کالر" &&
+    cleaned.gala.collar_type !== "چھوٹا کالر"
+  ) {
+    cleaned.gala.collar_size = "";
+  }
+  if (!cleaned.gala.bain_type) cleaned.gala.bain_size = "";
+
+  if (!cleaned.pocket.front) cleaned.pocket.front_details = "";
+  if (!cleaned.pocket.side) {
+    cleaned.pocket.side_count = "";
+    cleaned.pocket.side_details = "";
+  }
+
+  if (cleaned.baazoo.design !== "کنی بازو" && cleaned.baazoo.design !== "گول بازو") {
+    cleaned.baazoo.size = "";
+    cleaned.baazoo.extra = "";
+  }
+  if (cleaned.baazoo.design !== "کف") {
+    cleaned.baazoo.cuff_type = "";
+    cleaned.baazoo.cuff_size = "";
+    cleaned.baazoo.cuff_extra = "";
+    cleaned.baazoo.cuff_motai = "";
+    cleaned.baazoo.cuff_motai_comment = "";
+  }
+  if (!cleaned.baazoo.cuff_type) {
+    cleaned.baazoo.cuff_size = "";
+    cleaned.baazoo.cuff_extra = "";
+    cleaned.baazoo.cuff_motai = "";
+    cleaned.baazoo.cuff_motai_comment = "";
+  }
+
+  if (!cleaned.patai.type) cleaned.patai.patai_lambai = "";
+  if (!cleaned.patai.design) cleaned.patai.design_comment = "";
+  if (!cleaned.bukram.type) cleaned.bukram.value = "";
+  if (!cleaned.button_design?.type && cleaned.button_design) cleaned.button_design.comment = "";
+  if (!cleaned.kaaj_design?.type && cleaned.kaaj_design) cleaned.kaaj_design.comment = "";
+  if (cleaned.silai.type !== "واٹس ایپ") {
+    cleaned.silai.whatsapp_number = "";
+    cleaned.silai.whatsapp_name = "";
+    cleaned.silai.extra_style_design = "";
+  }
+
+  return cleaned;
+};
+
 
 const normalizeLegacy = (source) => {
   // Legacy records only had gala.type + collar_size/bain_size.
   // Safe defaults for new fields:
-  // - collar_type: if legacy had collar_size (or any collar data), assume گول کالر.
-  // - bain_type: default گول بین.
+  // - collar_type: if legacy had collar_size (or any collar data), assume Ú¯ÙˆÙ„ Ú©Ø§Ù„Ø±.
+  // - bain_type: default Ú¯ÙˆÙ„ Ø¨ÛŒÙ†.
   // - button/kaaj design fields: may not exist in old data.
   const legacyGalaType = source.galla_type || "";
-  const legacyHasCollar = legacyGalaType === "کالر" || Boolean(source.collar_size);
-  const legacyHasBain = legacyGalaType === "بین" || legacyGalaType === "Ban" || Boolean(source.bain_size);
+  const legacyHasCollar = legacyGalaType === "Ú©Ø§Ù„Ø±" || Boolean(source.collar_size);
+  const legacyHasBain = legacyGalaType === "Ø¨ÛŒÙ†" || legacyGalaType === "Ban" || Boolean(source.bain_size);
 
 
   return {
@@ -111,7 +209,7 @@ const normalizeLegacy = (source) => {
     button_design: source.button_design || defaultMeasurementDetails.button_design,
     kaaj_design: source.kaaj_design || defaultMeasurementDetails.kaaj_design,
     gala: {
-      type: legacyGalaType === "بین" ? "Half Bain" : legacyGalaType,
+      type: legacyGalaType === "Ø¨ÛŒÙ†" ? "Half Bain" : legacyGalaType,
       collar_type: legacyHasCollar ? (source.collar_type || "") : "",
       collar_size: source.collar_size || "",
       bain_type: legacyHasBain ? (source.bain_type || "") : "",
@@ -160,7 +258,7 @@ const normalizeLegacy = (source) => {
       additional_pocket: source.additional_pocket || "",
     },
     notes: source.notes || source.comments || "",
-    cloth_type: source.cloth_type || "شلوار قمیض",
+    cloth_type: source.cloth_type || "Ø´Ù„ÙˆØ§Ø± Ù‚Ù…ÛŒØ¶",
   };
 };
 
@@ -200,18 +298,18 @@ export const normalizeMeasurementData = (source) => {
         defaultMeasurementDetails.kaaj_design,
     };
 
-    if (merged.gala?.type === "کالر") {
-      if (merged.gala.collar_type === "Gol Collar") merged.gala.collar_type = "گول کالر";
-      if (merged.gala.collar_type === "Chota Collar") merged.gala.collar_type = "چھوٹا کالر";
+    if (merged.gala?.type === "Ú©Ø§Ù„Ø±") {
+      if (merged.gala.collar_type === "Gol Collar") merged.gala.collar_type = "Ú¯ÙˆÙ„ Ú©Ø§Ù„Ø±";
+      if (merged.gala.collar_type === "Chota Collar") merged.gala.collar_type = "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø§Ù„Ø±";
 
       merged.gala.collar_type = merged.gala.collar_type || "";
-      if (merged.gala.collar_type === "چھوٹا کالر") merged.gala.collar_size = "";
+      if (merged.gala.collar_type === "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø§Ù„Ø±") merged.gala.collar_size = "";
     }
 
-    if (merged.gala?.type === "بین") merged.gala.type = "Half Bain";
+    if (merged.gala?.type === "Ø¨ÛŒÙ†") merged.gala.type = "Half Bain";
     if (["Half Bain", "Full Bain"].includes(merged.gala?.type)) {
-      if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "گول بین";
-      if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "سیدھا بین";
+      if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "Ú¯ÙˆÙ„ Ø¨ÛŒÙ†";
+      if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "Ø³ÛŒØ¯Ú¾Ø§ Ø¨ÛŒÙ†";
 
       merged.gala.bain_type = merged.gala.bain_type || "";
       merged.gala.bain_size = merged.gala.bain_size ?? "";
@@ -221,13 +319,22 @@ export const normalizeMeasurementData = (source) => {
     merged.patai.design = merged.patai.design || "";
     merged.patai.design_comment = merged.patai.design_comment || "";
     merged.kareegar = { name: merged.kareegar?.name || "" };
+    merged.additional_comments = {
+      ...defaultMeasurementDetails.additional_comments,
+      ...(merged.additional_comments || {}),
+    };
 
-    return merged;
+merged.coat_farmaish = source.coat_farmaish ?? source.measurement_details?.coat_farmaish ?? defaultMeasurementDetails.coat_farmaish;
+    merged.waistcoat_farmaish = source.waistcoat_farmaish ?? source.measurement_details?.waistcoat_farmaish ?? defaultMeasurementDetails.waistcoat_farmaish;
+    return clearInvalidDependentValues(repairMojibakeDeep(merged));
   }
 
   // Detect if source is already new-format measurement_details
   // (e.g., when backend returns parsed measurements directly)
   const isNewFormat = source && (
+    source.hasOwnProperty("measurements") ||
+    source.hasOwnProperty("coat_farmaish") ||
+    source.hasOwnProperty("waistcoat_farmaish") ||
     source.hasOwnProperty("gala") ||
     source.hasOwnProperty("daaman") ||
     source.hasOwnProperty("pocket") ||
@@ -242,20 +349,24 @@ export const normalizeMeasurementData = (source) => {
       ...source,
       notes: source.notes ?? source.comments ?? "",
       cloth_type: source.cloth_type ?? defaultMeasurementDetails.cloth_type,
+      measurements: {
+        ...defaultMeasurementDetails.measurements,
+        ...(source.measurements || {}),
+      },
     };
 
-    if (merged.gala?.type === "کالر") {
-      if (merged.gala.collar_type === "Gol Collar") merged.gala.collar_type = "گول کالر";
-      if (merged.gala.collar_type === "Chota Collar") merged.gala.collar_type = "چھوٹا کالر";
+    if (merged.gala?.type === "Ú©Ø§Ù„Ø±") {
+      if (merged.gala.collar_type === "Gol Collar") merged.gala.collar_type = "Ú¯ÙˆÙ„ Ú©Ø§Ù„Ø±";
+      if (merged.gala.collar_type === "Chota Collar") merged.gala.collar_type = "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø§Ù„Ø±";
 
       merged.gala.collar_type = merged.gala.collar_type || "";
-      if (merged.gala.collar_type === "چھوٹا کالر") merged.gala.collar_size = "";
+      if (merged.gala.collar_type === "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø§Ù„Ø±") merged.gala.collar_size = "";
     }
 
-    if (merged.gala?.type === "بین") merged.gala.type = "Half Bain";
+    if (merged.gala?.type === "Ø¨ÛŒÙ†") merged.gala.type = "Half Bain";
     if (["Half Bain", "Full Bain"].includes(merged.gala?.type)) {
-      if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "گول بین";
-      if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "سیدھا بین";
+      if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "Ú¯ÙˆÙ„ Ø¨ÛŒÙ†";
+      if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "Ø³ÛŒØ¯Ú¾Ø§ Ø¨ÛŒÙ†";
 
       merged.gala.bain_type = merged.gala.bain_type || "";
       merged.gala.bain_size = merged.gala.bain_size ?? "";
@@ -265,8 +376,12 @@ export const normalizeMeasurementData = (source) => {
     merged.patai.design = merged.patai.design || "";
     merged.patai.design_comment = merged.patai.design_comment || "";
     merged.kareegar = { name: merged.kareegar?.name || "" };
+    merged.additional_comments = {
+      ...defaultMeasurementDetails.additional_comments,
+      ...(merged.additional_comments || {}),
+    };
 
-    return merged;
+    return clearInvalidDependentValues(repairMojibakeDeep(merged));
   }
 
   // Legacy records
@@ -275,17 +390,17 @@ export const normalizeMeasurementData = (source) => {
     ...normalizeLegacy(source),
   };
 
-  if (merged.gala?.type === "کالر") {
-    if (merged.gala.collar_type === "Gol Collar") merged.gala.collar_type = "گول کالر";
-    if (merged.gala.collar_type === "Chota Collar") merged.gala.collar_type = "چھوٹا کالر";
+  if (merged.gala?.type === "Ú©Ø§Ù„Ø±") {
+    if (merged.gala.collar_type === "Gol Collar") merged.gala.collar_type = "Ú¯ÙˆÙ„ Ú©Ø§Ù„Ø±";
+    if (merged.gala.collar_type === "Chota Collar") merged.gala.collar_type = "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø§Ù„Ø±";
 
     merged.gala.collar_type = merged.gala.collar_type || "";
-    if (merged.gala.collar_type === "چھوٹا کالر") merged.gala.collar_size = "";
+    if (merged.gala.collar_type === "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø§Ù„Ø±") merged.gala.collar_size = "";
   }
-  if (merged.gala?.type === "بین") merged.gala.type = "Half Bain";
+  if (merged.gala?.type === "Ø¨ÛŒÙ†") merged.gala.type = "Half Bain";
   if (["Half Bain", "Full Bain"].includes(merged.gala?.type)) {
-    if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "گول بین";
-    if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "سیدھا بین";
+    if (merged.gala.bain_type === "Gol Bain") merged.gala.bain_type = "Ú¯ÙˆÙ„ Ø¨ÛŒÙ†";
+    if (merged.gala.bain_type === "Seedha Bain") merged.gala.bain_type = "Ø³ÛŒØ¯Ú¾Ø§ Ø¨ÛŒÙ†";
 
     merged.gala.bain_type = merged.gala.bain_type || "";
     merged.gala.bain_size = merged.gala.bain_size ?? "";
@@ -296,8 +411,13 @@ export const normalizeMeasurementData = (source) => {
   merged.patai.design_comment = merged.patai.design_comment || "";
   merged.kareegar = { name: merged.kareegar?.name || "" };
 
-  return merged;
+  return clearInvalidDependentValues(repairMojibakeDeep(merged));
 };
+
+// Older exports may contain UTF-8 bytes decoded as Windows-1252. Keep the
+// repair narrow and apply it only after field normalization so comparisons
+// against legacy option values remain backward compatible.
+export const repairMojibakeText = repairMojibake;
 
 
 export const prepareMeasurementPayload = (measurementDetails) => ({
@@ -306,19 +426,19 @@ export const prepareMeasurementPayload = (measurementDetails) => ({
 });
 
 const measurementLabelMap = {
-  gala: "گلا",
-  hips: "ہپس",
-  bazoo: "بازو",
-  lambai: "لمبائی",
-  bazu: "بازو",
-  taira: "تیرا",
-  collar: "کالر",
-  seena: "چھاتی",
-  half_seena: "ہاف چھاتی",
-  kamar: "کمر",
-  daaman: "دامن",
-  shalwar: "شلوار",
-  pancha: "پانچہ",
+  gala: "Ú¯Ù„Ø§",
+  hips: "ÛÙ¾Ø³",
+  bazoo: "Ø¨Ø§Ø²Ùˆ",
+  lambai: "Ù„Ù…Ø¨Ø§Ø¦ÛŒ",
+  bazu: "Ø¨Ø§Ø²Ùˆ",
+  taira: "ØªÛŒØ±Ø§",
+  collar: "Ú©Ø§Ù„Ø±",
+  seena: "Ú†Ú¾Ø§ØªÛŒ",
+  half_seena: "ÛØ§Ù Ú†Ú¾Ø§ØªÛŒ",
+  kamar: "Ú©Ù…Ø±",
+  daaman: "Ø¯Ø§Ù…Ù†",
+  shalwar: "Ø´Ù„ÙˆØ§Ø±",
+  pancha: "Ù¾Ø§Ù†Ú†Û",
 };
 
 export const MEASUREMENT_FIELD_ORDER = {
@@ -351,212 +471,240 @@ export const measurementListFields = [
   "pancha",
 ];
 
-export const getMeasurementLabel = (key) => measurementLabelMap[key] || key;
+export const getMeasurementLabel = (key) => repairMojibake(measurementLabelMap[key] || key);
 
 export const formatMeasurementList = (details) =>
   measurementListFields.map((key) => ({ label: measurementLabelMap[key], value: details.measurements[key] || "-" }));
 
 export const FARMAISH_CANONICAL_ORDER = [
-  { key: "gala", label: "گلہ" },
-  { key: "baazoo", label: "بازو" },
-  { key: "patai", label: "پٹائی" },
-  { key: "pocketFront", label: "سامنے پاکٹ" },
-  { key: "pocketSide", label: "سائیڈ پاکٹ" },
-  { key: "shalwarPocket", label: "شلوار جیب" },
-  { key: "buttonDesign", label: "بٹن ڈیزائن" },
-  { key: "kaajDesign", label: "کاج ڈیزائن" },
-  { key: "silai", label: "سلائی" },
-  { key: "shalwar", label: "شلوار" },
-  { key: "daaman", label: "دامن" },
+  { key: "gala", label: "Ú¯Ù„Û" },
+  { key: "baazoo", label: "Ø¨Ø§Ø²Ùˆ" },
+  { key: "patai", label: "Ù¾Ù¹Ø§Ø¦ÛŒ" },
+  { key: "pocketFront", label: "\u0633\u0627\u0645\u0646\u06d2 \u067e\u0627\u06a9\u0679" },
+  { key: "pocketSide", label: "\u0633\u0627\u0626\u06cc\u0688 \u067e\u0627\u06a9\u0679" },
+  { key: "shalwarPocket", label: "Ø´Ù„ÙˆØ§Ø± Ø¬ÛŒØ¨" },
+  { key: "buttonDesign", label: "Ø¨Ù¹Ù† ÚˆÛŒØ²Ø§Ø¦Ù†" },
+  { key: "kaajDesign", label: "Ú©Ø§Ø¬ ÚˆÛŒØ²Ø§Ø¦Ù†" },
+  { key: "silai", label: "Ø³Ù„Ø§Ø¦ÛŒ" },
+  { key: "shalwar", label: "Ø´Ù„ÙˆØ§Ø±" },
+  { key: "daaman", label: "Ø¯Ø§Ù…Ù†" },
 ];
 
 const safe = (v) => v !== undefined && v !== null && String(v).trim() !== "";
 const galaDisplayLabels = {
-  "Goal Gala": "گول گلا",
-  "V Gala": "وی گلا",
-  Ban: "بین",
-  "Half Bain": "ہاف بین",
-  "Full Bain": "فل بین",
+  "Goal Gala": "Ú¯ÙˆÙ„ Ú¯Ù„Ø§",
+  "V Gala": "ÙˆÛŒ Ú¯Ù„Ø§",
+  Ban: "Ø¨ÛŒÙ†",
+  "Half Bain": "ÛØ§Ù Ø¨ÛŒÙ†",
+  "Full Bain": "ÙÙ„ Ø¨ÛŒÙ†",
 };
 const getGalaDisplayLabel = (value) => galaDisplayLabels[value] || value;
 const farmaishDisplayLabels = {
-  "ڈبل CTC": "ڈبل سی ٹی سی",
-  "Double CTC": "ڈبل سی ٹی سی",
-  "D کف": "ڈی کف",
-  "Gol Collar": "گول کالر",
-  "Seedha Collar": "سیدھا کالر",
-  "Chota Collar": "چھوٹا کالر",
-  "2 Buttons": "دو بٹن",
-  "3 Buttons": "تین بٹن",
-  "Single Chaak": "سنگل چاک",
-  "Double Chaak": "ڈبل چاک",
+  "Half Bain": "ہاف بین",
+  "Full Bain": "فل بین",
+  "بین": "بین",
+  "Gol Bain": "گول بین",
+  "Seedha Bain": "سیدھا بین",
+  "ÚˆØ¨Ù„ CTC": "ÚˆØ¨Ù„ Ø³ÛŒ Ù¹ÛŒ Ø³ÛŒ",
+  "Double CTC": "ÚˆØ¨Ù„ Ø³ÛŒ Ù¹ÛŒ Ø³ÛŒ",
+  "D Ú©Ù": "ÚˆÛŒ Ú©Ù",
+  "Gol Collar": "Ú¯ÙˆÙ„ Ú©Ø§Ù„Ø±",
+  "Seedha Collar": "Ø³ÛŒØ¯Ú¾Ø§ Ú©Ø§Ù„Ø±",
+  "Chota Collar": "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø§Ù„Ø±",
+  "2 Buttons": "Ø¯Ùˆ Ø¨Ù¹Ù†",
+  "3 Buttons": "ØªÛŒÙ† Ø¨Ù¹Ù†",
+  "Single Chaak": "Ø³Ù†Ú¯Ù„ Ú†Ø§Ú©",
+  "Double Chaak": "ÚˆØ¨Ù„ Ú†Ø§Ú©",
 };
-const getFarmaishDisplayLabel = (value) => farmaishDisplayLabels[value] || value;
+const getFarmaishDisplayLabel = (value) => repairMojibake(farmaishDisplayLabels[value] || value);
 
 export const getFarmaishRows = (details) => {
   const rows = [];
+  const normalizedValue = (value) => repairMojibake(String(value ?? "").trim());
   const push = (label, value) => {
     const v = value === undefined || value === null ? "" : String(value).trim();
     if (!v) return;
-    rows.push({ label, value: v });
+    rows.push({ label: repairMojibake(label), value: repairMojibake(v) });
   };
 
   const d = details || {};
 
   if (Array.isArray(d.waistcoat_farmaish)) {
     const waistcoatLabels = {
-      "Boan Pocket": "بون پاکٹ",
-      "Cut Daman": "کٹ دامن",
-      "Down Zyada": "گول دامن",
-      "Daman Zyada": "گول دامن",
-      "Goal Daman": "گول دامن",
+      "Boan Pocket": "Ø¨ÙˆÙ† Ù¾Ø§Ú©Ù¹",
+      "Cut Daman": "Ú©Ù¹ Ø¯Ø§Ù…Ù†",
+      "Down Zyada": "Ú¯ÙˆÙ„ Ø¯Ø§Ù…Ù†",
+      "Daman Zyada": "Ú¯ÙˆÙ„ Ø¯Ø§Ù…Ù†",
+      "Goal Daman": "Ú¯ÙˆÙ„ Ø¯Ø§Ù…Ù†",
     };
-    d.waistcoat_farmaish.forEach((value) => push("فرمائش", waistcoatLabels[value] || value));
-    if (safe(d.gala?.type)) push("\u06af\u0644\u0627 \u06a9\u06cc \u0642\u0633\u0645", getGalaDisplayLabel(d.gala.type));
-    return rows;
+    d.waistcoat_farmaish.forEach((value) => push("ÙØ±Ù…Ø§Ø¦Ø´", waistcoatLabels[value] || value));
+    // Fall through to process generic farmaish types (removed early return to prevent data loss bugs)
   }
   if (d.coat_farmaish && (safe(d.coat_farmaish.buttons) || safe(d.coat_farmaish.chaak))) {
-    const buttonLabels = { "2 Buttons": "دو بٹن", "3 Buttons": "تین بٹن" };
-    const chaakLabels = { "Single Chaak": "سنگل چاک", "Double Chaak": "ڈبل چاک" };
-    if (safe(d.coat_farmaish.buttons)) push("بٹن", buttonLabels[d.coat_farmaish.buttons] || d.coat_farmaish.buttons);
-    if (safe(d.coat_farmaish.chaak)) push("چاک", chaakLabels[d.coat_farmaish.chaak] || d.coat_farmaish.chaak);
-    if (safe(d.gala?.type)) push("\u06af\u0644\u0627 \u06a9\u06cc \u0642\u0633\u0645", getGalaDisplayLabel(d.gala.type));
-    return rows;
+    const buttonLabels = { "2 Buttons": "Ø¯Ùˆ Ø¨Ù¹Ù†", "3 Buttons": "ØªÛŒÙ† Ø¨Ù¹Ù†" };
+    const chaakLabels = { "Single Chaak": "Ø³Ù†Ú¯Ù„ Ú†Ø§Ú©", "Double Chaak": "ÚˆØ¨Ù„ Ú†Ø§Ú©" };
+    if (safe(d.coat_farmaish.buttons)) push("Ø¨Ù¹Ù†", buttonLabels[d.coat_farmaish.buttons] || d.coat_farmaish.buttons);
+    if (safe(d.coat_farmaish.chaak)) push("Ú†Ø§Ú©", chaakLabels[d.coat_farmaish.chaak] || d.coat_farmaish.chaak);
+    // Fall through to process generic farmaish types (removed early return to prevent data loss bugs)
   }
 
-  // گلہ
-  const galaType = d.gala?.type || "";
-  if (safe(galaType)) {
-    if (galaType === "کالر") {
-      const collarType = d.gala.collar_type || "";
-      const collarSize = safe(d.gala.collar_size) ? d.gala.collar_size : "";
-      if (safe(collarType)) {
-        push("کالر", collarSize ? `${getFarmaishDisplayLabel(collarType)} (سائز: ${collarSize})` : getFarmaishDisplayLabel(collarType));
-      }
-    } else if (["بین", "Ban", "Half Bain", "Full Bain"].includes(galaType)) {
-      const bainType = d.gala.bain_type || "";
-      const bainSize = safe(d.gala.bain_size) ? d.gala.bain_size : "";
-      if (safe(bainType)) {
-        const parentLabel = galaType === "Full Bain" ? "فل بین" : "ہاف بین";
-        push(parentLabel, bainSize ? `${bainType} (سائز: ${bainSize})` : bainType);
-      }
-    } else {
-      push("گلہ", getGalaDisplayLabel(galaType));
+  // Track if gala type was already processed by waistcoat/coat blocks
+
+  const galaValues = [];
+  const appendGalaValue = (value) => {
+    if (Array.isArray(value)) {
+      value.forEach(appendGalaValue);
+      return;
     }
-  }
+    if (value && typeof value === "object") {
+      Object.values(value).forEach(appendGalaValue);
+      return;
+    }
+    const normalized = normalizedValue(value);
+    if (!normalized || galaValues.includes(normalized)) return;
+    const displayValue = {
+      "Half Bain": "ہاف بین",
+      "Full Bain": "فل بین",
+      Ban: "بین",
+      "Gol Bain": "گول بین",
+      "Seedha Bain": "سیدھا بین",
+    }[normalized] || normalized;
+    if (!galaValues.includes(displayValue)) galaValues.push(displayValue);
+  };
+  appendGalaValue(d.gala);
+  appendGalaValue(d.additional_comments?.gala);
+  if (galaValues.length) push("گلا", galaValues.join(" - "));
 
-  // بازو
-  const baazooDesign = d.baazoo?.design || "";
+  // Ø¨Ø§Ø²Ùˆ
+  const baazooDesign = normalizedValue(d.baazoo?.design);
   if (safe(baazooDesign)) {
     if (baazooDesign === "کنی بازو" || baazooDesign === "گول بازو") {
       const size = safe(d.baazoo.size) ? d.baazoo.size : "";
-      push("بازو", size ? `${baazooDesign} (سائز: ${size})` : baazooDesign);
+      push("Ø¨Ø§Ø²Ùˆ", size ? `${baazooDesign} (Ø³Ø§Ø¦Ø²: ${size})` : baazooDesign);
     } else if (baazooDesign === "کف") {
-      const parts = [safe(d.baazoo.cuff_type) ? d.baazoo.cuff_type : "", safe(d.baazoo.cuff_size) ? d.baazoo.cuff_size : "", safe(d.baazoo.cuff_motai) ? `موٹائی: ${d.baazoo.cuff_motai}` : ""].filter(Boolean);
-      if (parts.length) push("کف", parts.map(getFarmaishDisplayLabel).join(" / "));
-      if (safe(d.baazoo.cuff_extra)) push("اضافی کف سائز", d.baazoo.cuff_extra);
-      if (safe(d.baazoo.cuff_motai_comment)) push("کف موٹائی کے تبصرے", d.baazoo.cuff_motai_comment);
+      const parts = [
+        safe(d.baazoo.cuff_type) ? d.baazoo.cuff_type : "",
+        safe(d.baazoo.cuff_size) ? d.baazoo.cuff_size : "",
+        safe(d.baazoo.cuff_motai) ? `موٹائی: ${d.baazoo.cuff_motai}` : "",
+      ].filter(Boolean);
+      if (parts.length) push("بازو", parts.map(getFarmaishDisplayLabel).join(" - "));
+      if (safe(d.baazoo.cuff_extra)) push("Ø§Ø¶Ø§ÙÛŒ Ú©Ù Ø³Ø§Ø¦Ø²", d.baazoo.cuff_extra);
+      if (safe(d.baazoo.cuff_motai_comment)) push("Ú©Ù Ù…ÙˆÙ¹Ø§Ø¦ÛŒ Ú©Û’ ØªØ¨ØµØ±Û’", d.baazoo.cuff_motai_comment);
     } else {
-      push("بازو", baazooDesign);
+      push("Ø¨Ø§Ø²Ùˆ", baazooDesign);
     }
   }
 
-  // پٹائی
+  // Ù¾Ù¹Ø§Ø¦ÛŒ
   if (safe(d.patai?.type)) {
-    push("پٹائی", d.patai.type);
+    push("Ù¾Ù¹Ø§Ø¦ÛŒ", d.patai.type);
   }
   if (safe(d.patai?.patai_lambai)) {
-    push("پٹائی لمبائی", d.patai.patai_lambai);
+    push("Ù¾Ù¹Ø§Ø¦ÛŒ Ù„Ù…Ø¨Ø§Ø¦ÛŒ", d.patai.patai_lambai);
   }
   const pataiDesign = safe(d.patai?.design) ? d.patai.design : "";
   const pataiDesignComment = safe(d.patai?.design_comment) ? d.patai.design_comment : "";
   if (pataiDesign && pataiDesignComment) {
-    push("پٹائی ڈیزائن", `${pataiDesign} (${pataiDesignComment})`);
+    push("Ù¾Ù¹Ø§Ø¦ÛŒ ÚˆÛŒØ²Ø§Ø¦Ù†", `${pataiDesign} (${pataiDesignComment})`);
   } else if (pataiDesign) {
-    push("پٹائی ڈیزائن", pataiDesign);
+    push("Ù¾Ù¹Ø§Ø¦ÛŒ ÚˆÛŒØ²Ø§Ø¦Ù†", pataiDesign);
   } else if (pataiDesignComment) {
-    push("پٹائی ڈیزائن", pataiDesignComment);
+    push("Ù¾Ù¹Ø§Ø¦ÛŒ ÚˆÛŒØ²Ø§Ø¦Ù†", pataiDesignComment);
   }
 
-  // سامنے پاکٹ
+  // Ø³Ø§Ù…Ù†Û’ Ù¾Ø§Ú©Ù¹
   if (d.pocket?.front || d.pocket?.side) {
     if (d.pocket?.front) {
       const frontDetails = d.pocket.front_details ? ` (${d.pocket.front_details})` : "";
-      push("سامنے پاکٹ", `ہاں${frontDetails}`);
+      push("\u0633\u0627\u0645\u0646\u06d2 \u067e\u0627\u06a9\u0679", `\u06c1\u0627\u06ba${frontDetails}`);
     }
     if (d.pocket?.side) {
-      const sideCount = d.pocket.side_count ? `${d.pocket.side_count} سائیڈ پاکٹ` : "";
+      const sideCount = d.pocket.side_count ? `${d.pocket.side_count} \u0633\u0627\u0626\u06cc\u0688 \u067e\u0627\u06a9\u0679` : "";
       const sideDetails = d.pocket.side_details ? d.pocket.side_details : "";
-      const suffix = [sideCount, sideDetails].filter(Boolean).join("، ");
-      push("سائیڈ پاکٹ", suffix ? `ہاں (${suffix})` : "ہاں");
+      const suffix = [sideCount, sideDetails].filter(Boolean).join("\u060c ");
+      push("\u0633\u0627\u0626\u06cc\u0688 \u067e\u0627\u06a9\u0679", suffix ? `\u06c1\u0627\u06ba (${suffix})` : "\u06c1\u0627\u06ba");
     }
   }
 
-  // شلوار جیب
+  // Ø´Ù„ÙˆØ§Ø± Ø¬ÛŒØ¨
   const additionalPocket = d.shalwar?.additional_pocket;
   if (additionalPocket !== undefined && additionalPocket !== null && safe(additionalPocket)) {
-    push("شلوار جیب", additionalPocket === "ہاں" ? "ہاں" : "نہیں");
+    const pocketValue = repairMojibake(additionalPocket);
+    const displayValue = pocketValue === "ہاں" ? "ہاں" : pocketValue === "نہیں" ? "نہیں" : pocketValue;
+    push("Ø´Ù„ÙˆØ§Ø± Ø¬ÛŒØ¨", displayValue);
   }
 
-  // بٹن ڈیزائن
+  // Ø¨Ù¹Ù† ÚˆÛŒØ²Ø§Ø¦Ù†
   if (safe(d.button_design?.type)) {
     const base = d.button_design.type;
     const comment = safe(d.button_design?.comment) ? d.button_design.comment : "";
-    push("بٹن ڈیزائن", comment ? `${base} (${comment})` : base);
+    push("Ø¨Ù¹Ù† ÚˆÛŒØ²Ø§Ø¦Ù†", comment ? `${base} (${comment})` : base);
   }
 
-  // کاج ڈیزائن
+  // Ú©Ø§Ø¬ ÚˆÛŒØ²Ø§Ø¦Ù†
   if (safe(d.kaaj_design?.type)) {
     const base = d.kaaj_design.type;
     const comment = safe(d.kaaj_design?.comment) ? d.kaaj_design.comment : "";
-    push("کاج ڈیزائن", comment ? `${base} (${comment})` : base);
+    push("Ú©Ø§Ø¬ ÚˆÛŒØ²Ø§Ø¦Ù†", comment ? `${base} (${comment})` : base);
   }
 
-  // بکرم
+  // Ø¨Ú©Ø±Ù…
   const bukramType = d.bukram?.type || "";
   const bukramValue = d.bukram?.value || "";
   if (safe(bukramType) || safe(bukramValue)) {
-    push("بکرم", [bukramType, bukramValue].filter(safe).join(" — "));
+    push("Ø¨Ú©Ø±Ù…", [bukramType, bukramValue].filter(safe).join(" â€” "));
   }
 
-  // منڈا
+  // Ù…Ù†ÚˆØ§
   if (safe(d.munda?.value)) {
-    push("منڈا", d.munda.value);
+    push("Ù…Ù†ÚˆØ§", d.munda.value);
   }
   if (safe(d.munda?.comment)) {
-    push("منڈا کمنٹس", d.munda.comment);
+    push("Ù…Ù†ÚˆØ§ Ú©Ù…Ù†Ù¹Ø³", d.munda.comment);
   }
 
   if (safe(d.baazoo?.extra)) {
-    push("بازو اضافی سائز", d.baazoo.extra);
+    push("Ø¨Ø§Ø²Ùˆ Ø§Ø¶Ø§ÙÛŒ Ø³Ø§Ø¦Ø²", d.baazoo.extra);
   }
 
-  // سلائی
+  // Ø³Ù„Ø§Ø¦ÛŒ
   if (safe(d.silai?.type)) {
     let line = d.silai.type;
-    if (d.silai.type === "واٹس ایپ") {
+    if (normalizedValue(d.silai.type) === "واٹس ایپ") {
       const parts = [];
-      if (safe(d.silai.whatsapp_number)) parts.push(`نمبر: ${d.silai.whatsapp_number}`);
-      if (safe(d.silai.whatsapp_name)) parts.push(`نام: ${d.silai.whatsapp_name}`);
-      if (safe(d.silai.extra_style_design)) parts.push(`اضافی: ${d.silai.extra_style_design}`);
-      if (parts.length) line = `${line} (${parts.join(" ، ")})`;
+      if (safe(d.silai.whatsapp_number)) parts.push(`Ù†Ù…Ø¨Ø±: ${d.silai.whatsapp_number}`);
+      if (safe(d.silai.whatsapp_name)) parts.push(`Ù†Ø§Ù…: ${d.silai.whatsapp_name}`);
+      if (safe(d.silai.extra_style_design)) parts.push(`Ø§Ø¶Ø§ÙÛŒ: ${d.silai.extra_style_design}`);
+      if (parts.length) line = `${line} (${parts.join(" ØŒ ")})`;
     }
-    push("سلائی", getFarmaishDisplayLabel(line));
+    push("Ø³Ù„Ø§Ø¦ÛŒ", getFarmaishDisplayLabel(line));
   }
-  if (safe(d.silai?.extra_style_design) && d.silai.type !== "واٹس ایپ") {
-    push("اضافی اسٹائل / ڈیزائن", d.silai.extra_style_design);
+  if (safe(d.silai?.extra_style_design) && normalizedValue(d.silai.type) !== "واٹس ایپ") {
+    push("Ø§Ø¶Ø§ÙÛŒ Ø§Ø³Ù¹Ø§Ø¦Ù„ / ÚˆÛŒØ²Ø§Ø¦Ù†", d.silai.extra_style_design);
   }
 
-  // شلوار
+  // Ø´Ù„ÙˆØ§Ø±
   if (safe(d.shalwar?.style)) {
     const shalwarComment = safe(d.shalwar?.comment) ? ` (${d.shalwar.comment})` : "";
-    push("شلوار", d.shalwar.style + shalwarComment);
+    push("Ø´Ù„ÙˆØ§Ø±", d.shalwar.style + shalwarComment);
   }
 
-  // دامن
+  // Ø¯Ø§Ù…Ù†
   if (safe(d.daaman?.type)) {
-    push("دامن", d.daaman.type);
+    push("Ø¯Ø§Ù…Ù†", d.daaman.type);
   }
+
+  const appendComment = (comment, labels, fallbackLabel) => {
+    if (!safe(comment)) return;
+    const repairedLabels = labels.map(repairMojibake);
+    const row = rows.find((item) => repairedLabels.includes(item.label));
+    if (row) {
+      row.value = `${row.value} (${repairMojibake(comment)})`;
+    } else {
+      push(repairMojibake(fallbackLabel), comment);
+    }
+  };
+  appendComment(d.additional_comments?.daman, ["Ø¯Ø§Ù…Ù†", "دامن"], "Ø¯Ø§Ù…Ù†");
 
   return rows;
 };

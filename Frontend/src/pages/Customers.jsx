@@ -48,6 +48,14 @@ const getLatestMeasurement = (measurementsList) => {
   }, measurementsList[0]);
 };
 
+const getLatestOrder = (ordersList) => {
+  if (!Array.isArray(ordersList) || ordersList.length === 0) return null;
+  return [...ordersList].sort((a, b) => {
+    const timeDifference = new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+    return timeDifference || Number(b.id || 0) - Number(a.id || 0);
+  })[0];
+};
+
 const computeCustomerValue = (ordersList) => {
   const list = Array.isArray(ordersList) ? ordersList : [];
   const totalEarned = list.reduce((sum, o) => sum + Number(o.total_amount ?? o.price ?? 0), 0);
@@ -213,13 +221,28 @@ export default function Customers() {
     loadCustomers();
   }, [loadCustomers]);
 
+  useEffect(() => {
+    let mounted = true;
+    getSettings()
+      .then((response) => {
+        if (mounted) setSettings(response.data || null);
+      })
+      .catch(() => {
+        if (mounted) setSettings(null);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const filteredCustomers = useMemo(() => {
     const term = search.toLowerCase();
     if (!term) return customers;
     return customers.filter(
       (c) =>
         safeString(c.name).toLowerCase().includes(term) ||
-        safeString(c.phone).toLowerCase().includes(term),
+        safeString(c.phone).toLowerCase().includes(term) ||
+        safeString(c.serial_number).toLowerCase().includes(term),
     );
   }, [customers, search]);
 
@@ -773,7 +796,7 @@ export default function Customers() {
           settings={settings}
           customer={printCustomerForPreview}
           measurement={printMeasurementForPreview}
-          order={customerOrders.find((item) => String(item.customer_id) === String(printCustomerForPreview.id) && String(item.dress_type || "").toLowerCase().replace(/\s+/g, "") === String(printMeasurementForPreview.dress_type || "shalwar kameez").toLowerCase().replace(/\s+/g, "")) || null}
+          order={getLatestOrder(customerOrders)}
 
           onCancel={closePrintPreview}
           onEditMeasurement={() => {

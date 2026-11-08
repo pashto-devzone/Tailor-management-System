@@ -13,6 +13,7 @@ const settingsRoutes = require("./routes/settingsRoutes");
 const backupRoutes = require("./routes/backupRoutes");
 const recycleBinRoutes = require("./routes/recycleBinRoutes");
 const authRoutes = require("./routes/authRoutes");
+const userSupabaseConfigRoutes = require("./routes/userSupabaseConfigRoutes");
 const updateRoutes = require("./routes/updateRoutes");
 const v1Routes = require("./routes/v1/index");
 const adminRoutes = require("./routes/admin/index");
@@ -87,7 +88,7 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Tailor Shop Management API is running",
-    data: { version: "1.0.0" },
+    data: { version: "1.6.2" },
   });
 });
 
@@ -112,6 +113,7 @@ app.get("/health", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/user/supabase-config", userSupabaseConfigRoutes);
 app.use("/api/update", updateRoutes);
 
 app.use("/api/v1", v1Routes);

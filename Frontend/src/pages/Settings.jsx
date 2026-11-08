@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import {
   getSettings,
   saveSettings,
@@ -6,6 +6,10 @@ import {
   restoreBackup,
   listApiKeys,
   createApiKey,
+  getUserSupabaseConfig,
+  saveUserSupabaseConfig,
+  testSupabaseConnection,
+  disconnectUserSupabase,
 } from "../services/api";
 import RecycleBinSection from "./RecycleBinSection";
 import ProfessionalFooter from "../components/ProfessionalFooter.jsx";
@@ -14,7 +18,9 @@ import { useShop } from "../contexts/ShopContext";
 import { useAuth } from "../contexts/AuthContext";
 import { FaSignOutAlt } from "react-icons/fa";
 import { FaChevronDown } from "react-icons/fa";
+import { FaDatabase } from "react-icons/fa";
 import { changePassword } from "../services/api";
+import { logout } from "../services/api";
 
 
 const initialForm = {
@@ -63,6 +69,128 @@ export default function Settings() {
   const [apiKeyError, setApiKeyError] = useState("");
   const publicApiBase = import.meta.env.VITE_PUBLIC_API_URL || import.meta.env.VITE_API_URL || window.location.origin;
   const ordersApiEndpoint = `${publicApiBase.replace(/\/$/, "")}/api/v1/orders/{orderId}`;
+
+  // Supabase Database Configuration state
+  const [supabaseConfig, setSupabaseConfig] = useState(null);
+  const [supabaseLoading, setSupabaseLoading] = useState(false);
+  const [supabaseMessage, setSupabaseMessage] = useState("");
+  const [supabaseError, setSupabaseError] = useState("");
+  const [supabaseOpen, setSupabaseOpen] = useState(false);
+  const [connString, setConnString] = useState("");
+  const [connHost, setConnHost] = useState("");
+  const [connPort, setConnPort] = useState("5432");
+  const [connDatabase, setConnDatabase] = useState("postgres");
+  const [connUsername, setConnUsername] = useState("");
+  const [connPassword, setConnPassword] = useState("");
+  const [sslMode, setSslMode] = useState("no-verify");
+  const [newProjectUrl, setNewProjectUrl] = useState("");
+  const [newProjectName, setNewProjectName] = useState("");
+  const [newAnonKey, setNewAnonKey] = useState("");
+  const [testingConnection, setTestingConnection] = useState(false);
+
+  useEffect(() => {
+    let mounted = true;
+    getUserSupabaseConfig()
+      .then((res) => {
+        if (!mounted) return;
+        setSupabaseConfig(res.data);
+      })
+      .catch((err) => {
+        if (!mounted) return;
+        setSupabaseConfig(null);
+      });
+    return () => { mounted = false; };
+  }, []);
+
+  const handleSaveSupabaseConfig = async (e) => {
+    e.preventDefault();
+    setSupabaseError("");
+    setSupabaseMessage("");
+    if (!connString && (!connHost || !connPort || !connDatabase || !connUsername || !connPassword)) {
+      setSupabaseError("Provide a connection string or host, port, database, username and password.");
+      return;
+    }
+    setSupabaseLoading(true);
+    try {
+      const res = await saveUserSupabaseConfig({
+        connectionString: connString || undefined,
+        connectionHost: connHost || undefined,
+        connectionPort: connPort || undefined,
+        connectionDatabase: connDatabase || undefined,
+        connectionUsername: connUsername || undefined,
+        connectionPassword: connPassword || undefined,
+        sslMode,
+        projectUrl: newProjectUrl || undefined,
+        projectName: newProjectName || undefined,
+        anonKey: newAnonKey || undefined,
+      });
+      setSupabaseMessage(res.data.message || "Supabase configuration saved.");
+      setSupabaseConfig(res.data.config || null);
+      setNewProjectUrl("");
+      setNewProjectName("");
+      setNewAnonKey("");
+    } catch (err) {
+      setSupabaseError(err?.friendlyMessage || "Failed to save Supabase configuration.");
+    } finally {
+      setSupabaseLoading(false);
+    }
+  };
+
+  const handleTestSupabaseConnection = async (e) => {
+    e.preventDefault();
+    setSupabaseError("");
+    setSupabaseMessage("");
+    if (!connString && (!connHost || !connPort || !connDatabase || !connUsername || !connPassword)) {
+      setSupabaseError("Provide a connection string or host, port, database, username and password.");
+      return;
+    }
+    setTestingConnection(true);
+    try {
+      const res = await testSupabaseConnection({
+        connectionString: connString || undefined,
+        connectionHost: connHost || undefined,
+        connectionPort: connPort || undefined,
+        connectionDatabase: connDatabase || undefined,
+        connectionUsername: connUsername || undefined,
+        connectionPassword: connPassword || undefined,
+        sslMode,
+        projectUrl: newProjectUrl || undefined,
+        projectName: newProjectName || undefined,
+        anonKey: newAnonKey || undefined,
+      });
+      if (res.data.ok) {
+        setSupabaseMessage("Connection test passed. Your Supabase project is reachable.");
+      } else {
+        setSupabaseError(res.data.error || "Connection test failed.");
+        if (res.data.missing_tables && res.data.missing_tables.length) {
+          setSupabaseError(
+            `Missing tables: ${res.data.missing_tables.join(", ")}. Set them up before saving.`
+          );
+        }
+      }
+    } catch (err) {
+      setSupabaseError(err?.friendlyMessage || "Unable to test connection.");
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const handleDisconnectSupabase = async () => {
+    if (!window.confirm("Disconnecting will stop using your personal Supabase project. Business data will remain in its original project. Continue?")) {
+      return;
+    }
+    setSupabaseLoading(true);
+    try {
+      const res = await disconnectUserSupabase();
+      setSupabaseMessage(res.data.message || "Disconnected.");
+      setSupabaseConfig(null);
+    } catch (err) {
+      setSupabaseError(err?.friendlyMessage || "Failed to disconnect.");
+    } finally {
+      setSupabaseLoading(false);
+    }
+  };
+
 
   useEffect(() => {
     let mounted = true;
@@ -416,27 +544,150 @@ export default function Settings() {
 
                 <div className="backup-guide-box">
                   <h5>URDU</h5>
-                  <p>اپنا ڈیٹا محفوظ رکھنے کا طریقہ:</p>
+                  <p>Ø§Ù¾Ù†Ø§ ÚˆÛŒÙ¹Ø§ Ù…Ø­ÙÙˆØ¸ Ø±Ú©Ú¾Ù†Û’ Ú©Ø§ Ø·Ø±ÛŒÙ‚Û:</p>
                   <ol>
-                    <li>"Create Backup" پر کلک کریں۔</li>
-                    <li>ZIP فائل محفوظ کریں۔</li>
+                    <li>"Create Backup" Ù¾Ø± Ú©Ù„Ú© Ú©Ø±ÛŒÚºÛ”</li>
+                    <li>ZIP ÙØ§Ø¦Ù„ Ù…Ø­ÙÙˆØ¸ Ú©Ø±ÛŒÚºÛ”</li>
                     <li>
-                      اس ZIP فائل کو اپنے Google Drive میں اپ لوڈ کریں۔
+                      Ø§Ø³ ZIP ÙØ§Ø¦Ù„ Ú©Ùˆ Ø§Ù¾Ù†Û’ Google Drive Ù…ÛŒÚº Ø§Ù¾ Ù„ÙˆÚˆ Ú©Ø±ÛŒÚºÛ”
                     </li>
                     <li>
-                      اگر کمپیوٹر خراب ہو جائے یا نیا کمپیوٹر استعمال کریں:
+                      Ø§Ú¯Ø± Ú©Ù…Ù¾ÛŒÙˆÙ¹Ø± Ø®Ø±Ø§Ø¨ ÛÙˆ Ø¬Ø§Ø¦Û’ ÛŒØ§ Ù†ÛŒØ§ Ú©Ù…Ù¾ÛŒÙˆÙ¹Ø± Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ú©Ø±ÛŒÚº:
                       <ul>
-                        <li>Tailor Hub دوبارہ انسٹال کریں۔</li>
-                        <li>Google Drive سے Backup ZIP ڈاؤن لوڈ کریں۔</li>
-                        <li>Restore Backup پر کلک کریں۔</li>
-                        <li>ZIP فائل منتخب کریں۔</li>
-                        <li>تمام گاہک، میجرمنٹس، آرڈرز اور سیٹنگز واپس بحال ہو جائیں گی۔</li>
+                        <li>Tailor Hub Ø¯ÙˆØ¨Ø§Ø±Û Ø§Ù†Ø³Ù¹Ø§Ù„ Ú©Ø±ÛŒÚºÛ”</li>
+                        <li>Google Drive Ø³Û’ Backup ZIP ÚˆØ§Ø¤Ù† Ù„ÙˆÚˆ Ú©Ø±ÛŒÚºÛ”</li>
+                        <li>Restore Backup Ù¾Ø± Ú©Ù„Ú© Ú©Ø±ÛŒÚºÛ”</li>
+                        <li>ZIP ÙØ§Ø¦Ù„ Ù…Ù†ØªØ®Ø¨ Ú©Ø±ÛŒÚºÛ”</li>
+                        <li>ØªÙ…Ø§Ù… Ú¯Ø§ÛÚ©ØŒ Ù…ÛŒØ¬Ø±Ù…Ù†Ù¹Ø³ØŒ Ø¢Ø±ÚˆØ±Ø² Ø§ÙˆØ± Ø³ÛŒÙ¹Ù†Ú¯Ø² ÙˆØ§Ù¾Ø³ Ø¨Ø­Ø§Ù„ ÛÙˆ Ø¬Ø§Ø¦ÛŒÚº Ú¯ÛŒÛ”</li>
                       </ul>
                     </li>
                   </ol>
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+
+        {/* SECTION: Supabase Database Configuration (Danger Zone) */}
+        <div className="collapsible-card" style={{ marginTop: 16, border: "1px solid var(--danger)", borderRadius: 8 }}>
+          <div className="collapsible-header" onClick={() => setSupabaseOpen((prev) => !prev)} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <FaDatabase style={{ color: "var(--danger)" }} />
+            <h3 style={{ margin: 0, color: "var(--danger)" }}>Supabase Database Configuration</h3>
+          </div>
+          <div className={supabaseOpen ? "collapsible-body" : "collapsible-body collapsed"} style={{ padding: "1rem" }}>
+            <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 12 }}>
+              {supabaseConfig && supabaseConfig.has_personal_db ? "Your account uses your own Supabase project for business data." : "Your account uses the central TMS Supabase database."}
+            </p>
+
+            {supabaseConfig?.config && (
+              <>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>Project URL</label>
+                  <input
+                    readOnly
+                    value={supabaseConfig.config.project_url || ""}
+                    style={{ width: "100%", padding: "0.5rem", borderRadius: 6, border: "1px solid var(--border)", fontSize: "0.85rem" }}
+                  />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>Connection Status</label>
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: "0.85rem", fontWeight: 600, color: supabaseConfig.config.status === "verified" ? "var(--success)" : "var(--danger)" }}>
+                    {supabaseConfig.config.status === "verified" ? "â— Verified" : "â— " + String(supabaseConfig.config.status || "unknown").charAt(0).toUpperCase() + String(supabaseConfig.config.status || "unknown").slice(1)}
+                  </span>
+                </div>
+                {supabaseConfig.config.anon_key_masked && (
+                  <div style={{ marginBottom: 12 }}>
+                    <label style={{ display: "block", fontSize: "0.85rem", fontWeight: 600, marginBottom: 4 }}>Anon Key (masked)</label>
+                    <input
+                      readOnly
+                      value={supabaseConfig.config.anon_key_masked}
+                      style={{ width: "100%", padding: "0.5rem", borderRadius: 6, border: "1px solid var(--border)", fontSize: "0.85rem", fontFamily: "monospace" }}
+                    />
+                    <p style={{ margin: "4px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                      Key is encrypted at rest. Full value is never shown.
+                    </p>
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="button secondary" onClick={handleTestSupabaseConnection} disabled={testingConnection || supabaseLoading}>
+                    {testingConnection ? "Testing..." : "Test Connection"}
+                  </button>
+                  <button type="button" className="button secondary" style={{ color: "var(--danger)" }} onClick={handleDisconnectSupabase} disabled={supabaseLoading}>
+                    {supabaseLoading ? "..." : "Disconnect Project"}
+                  </button>
+                </div>
+                {supabaseError && <p className="message error" style={{ marginTop: 8, fontSize: "0.85rem" }}>{supabaseError}</p>}
+                {supabaseMessage && <p className="message success" style={{ marginTop: 8, fontSize: "0.85rem" }}>{supabaseMessage}</p>}
+              </>
+            )}
+
+            {!supabaseConfig?.has_personal_db && (
+              <form onSubmit={handleSaveSupabaseConfig} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Connection String (Session Pooler URI)</span>
+                  <input
+                    type="text"
+                    value={connString}
+                    onChange={(e) => setConnString(e.target.value)}
+                    placeholder="postgresql://user:password@host:5432/postgres"
+                    style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", fontFamily: "monospace", fontSize: "0.85rem" }}
+                  />
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Host</span>
+                    <input type="text" value={connHost} onChange={(e) => setConnHost(e.target.value)} placeholder="aws-...pooler.supabase.com" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Port</span>
+                    <input type="text" value={connPort} onChange={(e) => setConnPort(e.target.value)} placeholder="5432" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                  </label>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Database</span>
+                    <input type="text" value={connDatabase} onChange={(e) => setConnDatabase(e.target.value)} placeholder="postgres" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                  </label>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Username</span>
+                    <input type="text" value={connUsername} onChange={(e) => setConnUsername(e.target.value)} placeholder="postgres.xxx" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                  </label>
+                </div>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Password</span>
+                  <input type="password" value={connPassword} onChange={(e) => setConnPassword(e.target.value)} placeholder="••••••••" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>SSL Mode</span>
+                  <select value={sslMode} onChange={(e) => setSslMode(e.target.value)} style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }}>
+                    <option value="no-verify">Require SSL (no verify)</option>
+                    <option value="require">Require SSL (verify)</option>
+                    <option value="disable">Disable SSL</option>
+                  </select>
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Project URL (optional)</span>
+                  <input type="url" value={newProjectUrl} onChange={(e) => setNewProjectUrl(e.target.value)} placeholder="https://your-project.supabase.co" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Anon Key (optional)</span>
+                  <input type="text" value={newAnonKey} onChange={(e) => setNewAnonKey(e.target.value)} placeholder="eyJ..." style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", fontFamily: "monospace", fontSize: "0.85rem" }} />
+                </label>
+                {supabaseError && <p className="message error" style={{ margin: 0, fontSize: "0.85rem" }}>{supabaseError}</p>}
+                {supabaseMessage && <p className="message success" style={{ margin: 0, fontSize: "0.85rem" }}>{supabaseMessage}</p>}
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="button secondary" onClick={handleTestSupabaseConnection} disabled={testingConnection || supabaseLoading}>
+                    {testingConnection ? "Testing..." : "Test Connection"}
+                  </button>
+                  <button type="submit" className="button primary" disabled={supabaseLoading}>
+                    {supabaseLoading ? "Saving..." : "Connect Project"}
+                  </button>
+                </div>
+                <p style={{ margin: "6px 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                  New users connect their own Supabase project via Session Pooler. Credentials are encrypted before storage.
+                </p>
+              </form>
+            )}
           </div>
         </div>
 
@@ -539,6 +790,7 @@ function AccountSection() {
     </div>
   );
 }
+
 
 
 

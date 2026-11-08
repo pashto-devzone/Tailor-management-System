@@ -20,6 +20,7 @@ export const MM_PER_INCH = 25.4;
 /** Paper-size presets. Orientation (portrait/landscape) swaps w/h. */
 export const PRINT_PAPER_PRESETS = {
   slip: { id: "slip", label: "Custom Slip — 4.25 × 5.75 in (default)", widthMm: 107.95, heightMm: 146.05 },
+  sixByEight: { id: "sixByEight", label: "6 × 8 in — 152.4 × 203.2 mm", widthMm: 152.4, heightMm: 203.2 },
   a5: { id: "a5", label: "A5 — 148 × 210 mm", widthMm: 148, heightMm: 210 },
   a4: { id: "a4", label: "A4 — 210 × 297 mm", widthMm: 210, heightMm: 297 },
   custom: { id: "custom", label: "Custom size", widthMm: null, heightMm: null },
@@ -34,18 +35,19 @@ export const DEFAULT_PRINT_SETTINGS = {
   customHeightMm: 146.05,
   // Printer-safe inset for the default 4.25 x 5.75 in slip. Increase in
   // Settings if the physical printer's unprintable edge clips content.
-  marginTop: 3.5,
-  marginBottom: 3.5,
-  marginLeft: 3.5,
-  marginRight: 3.5,
+  marginTop: 2.5,
+  marginBottom: 2.5,
+  marginLeft: 2.5,
+  marginRight: 2.5,
   // Extra padding inside the margins (applied to the print sheet).
-  innerPadding: 1,
+  innerPadding: 0.5,
   // Header (shop name, section titles) stays bold but compact so it cannot
   // wrap into the table on the narrow slip.
   headerFontSize: 10,
   headerFontWeight: 700,
-  tableFontSize: 8,
-  farmaishFontSize: 8,
+  // Single control for measurement-table values in every print entry point.
+  tableFontSize: 9,
+  farmaishFontSize: 9,
 };
 
 export const PRINT_LIMITS = {
@@ -58,7 +60,8 @@ export const PRINT_LIMITS = {
   headerFontMin: 6,
   headerFontMax: 22,
   tableFontMin: 6,
-  tableFontMax: 18,
+  // Keep large selections usable on the smallest supported slip.
+  tableFontMax: 14,
   // After margins + inner padding, at least this much of the paper must
   // remain as printable area in both directions.
   minPrintableMm: 15,
@@ -192,8 +195,8 @@ export function normalizePrintSettings(raw) {
   [marginLeft, marginRight] = fitPair(marginLeft, marginRight, widthMm, "Horizontal");
 
   const headerFontSize = normalizeBoundedNumber(src.headerFontSize, PRINT_LIMITS.headerFontMin, PRINT_LIMITS.headerFontMax, DEFAULT_PRINT_SETTINGS.headerFontSize, "Header font size", errors);
-  const tableFontSize = normalizeBoundedNumber(src.tableFontSize, PRINT_LIMITS.tableFontMin, PRINT_LIMITS.tableFontMax, DEFAULT_PRINT_SETTINGS.tableFontSize, "Measurement font size", errors);
-  const farmaishFontSize = normalizeBoundedNumber(src.farmaishFontSize, PRINT_LIMITS.tableFontMin, PRINT_LIMITS.tableFontMax, DEFAULT_PRINT_SETTINGS.farmaishFontSize, "Farmaish font size", errors);
+  const tableFontSize = 9;
+  const farmaishFontSize = 9;
 
   let headerFontWeight = DEFAULT_PRINT_SETTINGS.headerFontWeight;
   if (src.headerFontWeight !== undefined && src.headerFontWeight !== null && src.headerFontWeight !== "") {

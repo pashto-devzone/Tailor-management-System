@@ -1,4 +1,4 @@
-const bcrypt = require("bcrypt");
+﻿const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
@@ -6,6 +6,7 @@ const db = require("../config/db");
 const { JWT_SECRET, JWT_EXPIRES } = require("../middlewares/auth");
 const shopModel = require("../models/shopModel");
 const settingsModel = require("../models/settingsModel");
+const userSupabaseConfigModel = require("../models/userSupabaseConfigModel");
 
 const loginAttempts = new Map();
 const checkRateLimit = (ip) => {
@@ -25,24 +26,111 @@ exports.register = async (req, res) => {
   const { name, email, password, shopName } = req.body || {};
   if (!name || !email || !password) return res.status(400).json({ message: "Name, email aur password required hain" });
   if (password.length < 6) return res.status(400).json({ message: "Password kam se kam 6 characters ka hona chahiye" });
-  const existing = await db.prepare("SELECT id FROM users WHERE email = ?").get(email);
+  // Normalize email to lowercase to ensure case-insensitive login
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = await db.prepare("SELECT id FROM users WHERE email = ?").get(normalizedEmail);
   if (existing) return res.status(409).json({ message: "An account with this email already exists." });
 
-  const slug = `${email.split("@")[0]}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, "");
-  const store = await db.prepare("INSERT INTO stores (name, slug) VALUES (?, ?) RETURNING id").run(shopName || name, slug);
-  const storeId = store.lastInsertRowid;
+  // Central DB store for auth/account purposes (always created for all users)
+  const slug = `${normalizedEmail.split("@")[0]}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const centralStore = await db.prepare("INSERT INTO stores (name, slug) VALUES (?, ?) RETURNING id").run(shopName || name, slug);
+  const centralStoreId = centralStore.lastInsertRowid;
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await db.prepare(
     "INSERT INTO users (store_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?) RETURNING id",
-  ).run(storeId, name, email, passwordHash, "owner");
+  ).run(centralStoreId, name, normalizedEmail, passwordHash, "owner");
   const userId = user.lastInsertRowid;
-  await shopModel.saveShop({ name: shopName || name, owner_name: name, phone: "", address: "", storeId });
-  await settingsModel.saveSettings({ storeId, shopName: shopName || name, ownerName: name, phone: "", address: "", currency: "PKR" });
+  await shopModel.saveShop({ name: shopName || name, owner_name: name, phone: "", address: "", storeId: centralStoreId });
+  await settingsModel.saveSettings({ storeId: centralStoreId, shopName: shopName || name, ownerName: name, phone: "", address: "", currency: "PKR" });
+
+  // Optional: new users may connect their own Supabase project for business data.
+  // Existing users (no config provided) continue using the central TMS database.
+  let supabaseConfig = null;
+  let personalStoreId = null;
+  const {
+    projectUrl, projectName, anonKey,
+    connectionString, connectionHost, connectionPort, connectionDatabase,
+    connectionUsername, connectionPassword, sslMode,
+  } = req.body || {};
+
+  const hasPersonalConfig = Boolean(
+    connectionString || (connectionHost && connectionPort && connectionDatabase && connectionUsername && connectionPassword)
+  );
+
+  if (hasPersonalConfig) {
+    try {
+      // Normalize and test the personal connection, initialize schema
+      const personalDb = require("../services/personalDb");
+      const normalized = personalDb.normalizeConfig({
+        connectionString,
+        connectionHost,
+        connectionPort,
+        connectionDatabase,
+        connectionUsername,
+        connectionPassword,
+        sslMode,
+        projectUrl,
+        projectName,
+        anonKey,
+      });
+      const test = await personalDb.testConnection(normalized);
+      if (!test.ok || !test.schema_ok) {
+        throw new Error(test.error || "Personal database schema initialization failed.");
+      }
+
+      // Save config to central DB
+      supabaseConfig = await userSupabaseConfigModel.upsertConfig({
+        userId,
+        host: normalized.host,
+        port: normalized.port,
+        database: normalized.database,
+        username: normalized.username,
+        password: normalized.password,
+        sslMode: normalized.sslMode,
+        projectUrl: normalized.projectUrl,
+        projectName: normalized.projectName,
+        anonKey: normalized.anonKey,
+        status: "verified",
+        schemaOk: true,
+      });
+
+      // Initialize store in the user's personal database
+      const fullConfig = await userSupabaseConfigModel.getConfigByUserId(userId);
+      const storeResult = await userSupabaseConfigModel.initializePersonalStore(
+        userId,
+        { name, email },
+        fullConfig || supabaseConfig
+      );
+      personalStoreId = storeResult.store.id;
+    } catch (err) {
+      // Do not fail registration if personal store initialization fails.
+      // The user can configure it later from Settings.
+      console.error("[register] Personal store initialization failed:", err.message);
+    }
+  } else if (projectUrl && anonKey) {
+    // Legacy anon-key-only config (no Session Pooler credentials)
+    try {
+      supabaseConfig = await userSupabaseConfigModel.upsertConfig({
+        userId,
+        projectUrl,
+        projectName,
+        anonKey,
+        status: "pending",
+      });
+    } catch (err) {
+      console.error("[register] Supabase config save failed:", err.message);
+    }
+  }
+
   const id = sessionId();
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
-  const token = jwt.sign({ userId, storeId, role: "owner", jti: String(id) }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const token = jwt.sign({ userId, storeId: centralStoreId, role: "owner", personalStoreId, jti: String(id) }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
   await db.prepare("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)").run(id, userId, token, expiresAt);
-  return res.status(201).json({ token, user: { id: userId, store_id: storeId, name, email, role: "owner" } });
+  return res.status(201).json({
+    token,
+    user: { id: userId, store_id: centralStoreId, personal_store_id: personalStoreId, name, email, role: "owner" },
+    supabase_config: supabaseConfig || null,
+  });
 };
 
 exports.login = async (req, res) => {
@@ -51,15 +139,17 @@ exports.login = async (req, res) => {
     return res.status(429).json({ message: "Too many login attempts. Please try again later." });
   }
   if (!email || !password) return res.status(400).json({ message: "Email aur password required hain" });
-  const user = await db.prepare("SELECT * FROM users WHERE email = ?").get(email);
+  // Normalize email to lowercase for case-insensitive login
+  const normalizedEmail = email.toLowerCase().trim();
+  const user = await db.prepare("SELECT * FROM users WHERE email = ?").get(normalizedEmail);
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ message: "Invalid email/username or password." });
   }
   const id = sessionId();
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
-  const token = jwt.sign({ userId: user.id, storeId: user.store_id, role: user.role, jti: String(id) }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
+  const token = jwt.sign({ userId: user.id, storeId: user.store_id, role: user.role, personalStoreId: user.personal_store_id, jti: String(id) }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
   await db.prepare("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)").run(id, user.id, token, expiresAt);
-  return res.json({ token, user: { id: user.id, store_id: user.store_id, name: user.name, email: user.email, role: user.role } });
+  return res.json({ token, user: { id: user.id, store_id: user.store_id, personal_store_id: user.personal_store_id, name: user.name, email: user.email, role: user.role } });
 };
 
 exports.logout = async (req, res) => {
@@ -170,3 +260,4 @@ exports.resetPassword = async (req, res) => {
   await db.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").run(reset.user_id);
   return res.json({ message: "Password reset successfully. You can now sign in." });
 };
+

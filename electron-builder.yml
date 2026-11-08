@@ -27,6 +27,7 @@ asarUnpack:
   - "Backend/**"
 
 win:
+  artifactName: "${productName}-Setup-${version}.${ext}"
   target:
     - nsis
   icon: "electron/assets/icon.ico"
@@ -42,8 +43,9 @@ nsis:
 publish:
   provider: github
   owner: pashto-devzone
-  repo: pashto-devzone
+  repo: Tailor-management-System
   releaseType: release
+  vPrefixedTagName: true
 
 extraResources:
   # Backend files

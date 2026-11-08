@@ -1,4 +1,4 @@
-const db = require("../config/db");
+﻿const db = require("../config/operationalDb");
 
 exports.getShop = async (storeId = 1) =>
   db.prepare("SELECT * FROM shop WHERE store_id = ? LIMIT 1").get(storeId);
@@ -13,3 +13,4 @@ exports.saveShop = async ({ name, owner_name, phone, address, storeId = 1 }) => 
     ).run(storeId, name, owner_name, phone, address);
   }
 };
+

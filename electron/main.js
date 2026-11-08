@@ -2,10 +2,19 @@ const path = require('path');
 const fs = require('fs');
 const { fork } = require('child_process');
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require('electron');
 
 let autoUpdater = null;
 let backendProcess = null;
+let updateCheckInFlight = null;
+let lastUpdateCheckAt = 0;
+const UPDATE_CHECK_COOLDOWN_MS = 60 * 1000;
+const UPDATER_GITHUB_CONFIG = {
+  provider: 'github',
+  owner: 'pashto-devzone',
+  repo: 'Tailor-management-System',
+  releaseType: 'release',
+};
 try {
   autoUpdater = require('electron-updater').autoUpdater;
 } catch (e) {
@@ -23,6 +32,23 @@ process.on('unhandledRejection', (reason) => {
 
 function isProduction() {
   return app.isPackaged || process.env.NODE_ENV === 'production';
+}
+
+function compareVersions(left, right) {
+  const parse = (value) => String(value || '').replace(/^v/i, '').split(/[+-]/)[0].split('.').map((part) => {
+    const number = Number(part);
+    return Number.isInteger(number) && number >= 0 ? number : 0;
+  });
+  const a = parse(left);
+  const b = parse(right);
+  for (let index = 0; index < 3; index += 1) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) > (b[index] || 0) ? 1 : -1;
+  }
+  return 0;
+}
+
+function isNewerVersion(candidate, current) {
+  return compareVersions(candidate, current) > 0;
 }
 
 function getBackendEntrypointPaths() {
@@ -154,6 +180,59 @@ function getUserDataPaths() {
     dbFile: path.join(root, 'database', 'tailor.db'),
   };
 }
+
+function getAuthSessionPath() {
+  return path.join(app.getPath('userData'), 'auth-session.bin');
+}
+
+ipcMain.handle('auth:load', async () => {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { ok: false, message: 'Secure session storage is unavailable.' };
+    }
+    if (!fs.existsSync(getAuthSessionPath())) return { ok: true, session: null };
+    const encrypted = fs.readFileSync(getAuthSessionPath());
+    const session = JSON.parse(safeStorage.decryptString(encrypted));
+    if (!session || typeof session.token !== 'string' || !session.token) {
+      return { ok: true, session: null };
+    }
+    return { ok: true, session };
+  } catch (error) {
+    console.error('[electron/main.js][auth:load]', error.message);
+    return { ok: false, message: 'Unable to load the secure session.' };
+  }
+});
+
+ipcMain.handle('auth:save', async (_event, session) => {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { ok: false, message: 'Secure session storage is unavailable.' };
+    }
+    if (!session || typeof session.token !== 'string' || !session.token) {
+      return { ok: false, message: 'Invalid authentication session.' };
+    }
+    const encrypted = safeStorage.encryptString(JSON.stringify({
+      token: session.token,
+      user: session.user || null,
+    }));
+    fs.writeFileSync(getAuthSessionPath(), encrypted);
+    return { ok: true };
+  } catch (error) {
+    console.error('[electron/main.js][auth:save]', error.message);
+    return { ok: false, message: 'Unable to save the secure session.' };
+  }
+});
+
+ipcMain.handle('auth:clear', async () => {
+  try {
+    const sessionPath = getAuthSessionPath();
+    if (fs.existsSync(sessionPath)) fs.unlinkSync(sessionPath);
+    return { ok: true };
+  } catch (error) {
+    console.error('[electron/main.js][auth:clear]', error.message);
+    return { ok: false, message: 'Unable to clear the secure session.' };
+  }
+});
 
 function createWindow() {
   const iconPath = path.join(__dirname, 'assets', 'icon.ico');
@@ -431,7 +510,7 @@ app.whenReady().then(async () => {
 
     if (autoUpdater && isProduction()) {
       try {
-        autoUpdater.checkForUpdates();
+        checkForUpdatesSafely().catch((error) => console.error('[updater] startup check failed', error));
       } catch (_) {}
     }
   } catch (err) {
@@ -477,15 +556,15 @@ function getWindowForEvent(event) {
 const DEFAULT_PRINT_CONFIG = {
   widthMm: 107.95,   // 4.25 in — default measurement slip
   heightMm: 146.05,  // 5.75 in
-  marginTop: 3.5,
-  marginBottom: 3.5,
-  marginLeft: 3.5,
-  marginRight: 3.5,
-  innerPadding: 1,
+  marginTop: 2.5,
+  marginBottom: 2.5,
+  marginLeft: 2.5,
+  marginRight: 2.5,
+  innerPadding: 0.5,
   headerFontSize: 10,
   headerFontWeight: 700,
-  tableFontSize: 8,
-  farmaishFontSize: 8,
+  tableFontSize: 9,
+  farmaishFontSize: 9,
 };
 
 const clampNumber = (value, min, max, fallback) => {
@@ -509,8 +588,8 @@ function normalizePrintConfig(raw) {
     innerPadding: clampNumber(src.innerPadding, 0, 10, DEFAULT_PRINT_CONFIG.innerPadding),
     headerFontSize: clampNumber(src.headerFontSize, 6, 22, DEFAULT_PRINT_CONFIG.headerFontSize),
     headerFontWeight: clampNumber(src.headerFontWeight, 400, 900, DEFAULT_PRINT_CONFIG.headerFontWeight),
-    tableFontSize: clampNumber(src.tableFontSize, 6, 18, DEFAULT_PRINT_CONFIG.tableFontSize),
-    farmaishFontSize: clampNumber(src.farmaishFontSize, 6, 18, DEFAULT_PRINT_CONFIG.farmaishFontSize),
+    tableFontSize: clampNumber(src.tableFontSize, 6, 14, DEFAULT_PRINT_CONFIG.tableFontSize),
+    farmaishFontSize: clampNumber(src.farmaishFontSize, 6, 14, DEFAULT_PRINT_CONFIG.farmaishFontSize),
   };
   // Insets can never shrink the printable area below 15mm in either axis.
   const fitPair = (a, b, total) => {
@@ -542,8 +621,8 @@ function buildMeasurementPrintCss(cfg) {
       .measurement-preview-content{display:block!important;position:static!important;width:100%!important;height:auto!important;overflow:visible!important;padding:0!important}
       .measurement-print-sheet{box-sizing:border-box!important;display:flex!important;flex-direction:column!important;width:${round2(cfg.widthMm)}mm!important;height:calc(${round2(cfg.heightMm)}mm - 1mm)!important;min-height:0!important;margin:0 auto!important;padding:${pad(cfg.marginTop)}mm ${pad(cfg.marginRight)}mm ${pad(cfg.marginBottom)}mm ${pad(cfg.marginLeft)}mm!important;overflow:hidden!important;background:#fff!important;border:1px solid #111!important;box-shadow:none!important;break-inside:avoid;page-break-after:avoid}
       .measurement-preview-backdrop .measurement-preview-page{display:flex!important;flex:1 1 auto!important;width:100%!important;min-height:0!important;border:none!important;box-shadow:none!important;margin:0!important}
-      .measurement-preview-header{grid-template-columns:minmax(0,1.25fr) minmax(0,0.75fr)!important}
-      .measurement-preview-meta{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+      .measurement-preview-header{display:block!important}
+      .measurement-preview-meta{grid-template-columns:repeat(3,minmax(0,1fr))!important}
       .measurement-print-source{display:none!important}
       .measurement-print-fit-warning{display:none!important}
       @page{size:${round2(cfg.widthMm)}mm ${round2(cfg.heightMm)}mm;margin:0}
@@ -747,10 +826,22 @@ ipcMain.handle('print:current-page-pdf', async (event, printConfig) => {
 });
 
 if (autoUpdater) {
+  // Keep the runtime provider explicit so installed builds do not depend on
+  // stale or missing build-time app-update.yml settings.
+  autoUpdater.setFeedURL(UPDATER_GITHUB_CONFIG);
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
 
   autoUpdater.on('update-available', (info) => {
+    if (!isNewerVersion(info?.version, app.getVersion())) {
+      sendToRenderer('update:not-available', {
+        currentVersion: app.getVersion(),
+        latestVersion: info?.version || app.getVersion(),
+      });
+      return;
+    }
     sendToRenderer('update:available', {
       currentVersion: app.getVersion(),
       latestVersion: info.version,
@@ -784,18 +875,42 @@ if (autoUpdater) {
 
   autoUpdater.on('error', (err) => {
     console.error('[updater] error', err);
-    sendToRenderer('update:error', { message: err && err.message ? err.message : String(err) });
+    const rawMessage = err && err.message ? err.message : String(err);
+    const message = /504|gateway timeout|timeout/i.test(rawMessage)
+      ? 'The update service is temporarily unavailable. Please try again later.'
+      : /404|no published release|release not found/i.test(rawMessage)
+        ? 'No published update release was found. Publish a non-draft, non-prerelease GitHub release with the generated update metadata and installer assets.'
+      : rawMessage;
+    sendToRenderer('update:error', { message });
   });
 }
 
-ipcMain.handle('update:check', async () => {
-  if (!autoUpdater) return { ok: false, message: 'Updater not available' };
-  try {
-    autoUpdater.checkForUpdates();
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, message: e && e.message ? e.message : String(e) };
+function checkForUpdatesSafely() {
+  if (!autoUpdater) return Promise.resolve({ ok: false, message: 'Updater not available' });
+  const now = Date.now();
+  if (updateCheckInFlight) return updateCheckInFlight;
+  if (now - lastUpdateCheckAt < UPDATE_CHECK_COOLDOWN_MS) {
+    return Promise.resolve({ ok: false, message: 'Update check recently completed. Please try again shortly.' });
   }
+  lastUpdateCheckAt = now;
+  updateCheckInFlight = Promise.resolve()
+    .then(() => autoUpdater.checkForUpdates())
+    .then(() => ({ ok: true }))
+    .catch((error) => {
+      const rawMessage = error && error.message ? error.message : String(error);
+      const message = /504|gateway timeout|timeout/i.test(rawMessage)
+        ? 'The update service is temporarily unavailable. Please try again later.'
+        : rawMessage;
+      return { ok: false, message };
+    })
+    .finally(() => {
+      updateCheckInFlight = null;
+    });
+  return updateCheckInFlight;
+}
+
+ipcMain.handle('update:check', async () => {
+  return checkForUpdatesSafely();
 });
 
 ipcMain.handle('update:download', async () => {

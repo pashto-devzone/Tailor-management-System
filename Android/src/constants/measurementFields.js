@@ -121,7 +121,7 @@ export const shalwarOptions = [
 ];
 
 // Button + Kaaj options — exact Urdu values used by the desktop MeasurementModal.
-export const buttonDesignOptions = ['فینسی رنگ', 'سادہ رنگ', 'ہک بٹن', 'اسپیشل بٹن'];
+export const buttonDesignOptions = ['فینسی رنگ بٹن', 'سادہ رنگ بٹن', 'ہک بٹن', 'اسپیشل بٹن'];
 export const kaajDesignOptions = ['ڈبل کاج', 'اسٹڈ کاج', 'سادہ کاج'];
 
 // Pocket side count (desktop stores the plain number "1" or "2")

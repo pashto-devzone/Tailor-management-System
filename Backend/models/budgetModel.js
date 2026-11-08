@@ -1,4 +1,4 @@
-const db = require("../config/db");
+﻿const db = require("../config/operationalDb");
 
 exports.createEmployee = async ({ name, role, salary, salaryStatus = "Remaining", storeId = 1 }) =>
   db.prepare("INSERT INTO employees (store_id, name, role, salary, salary_status) VALUES (?, ?, ?, ?, ?) RETURNING id")
@@ -40,3 +40,4 @@ exports.getSalaries = async (storeId = 1) => db.prepare(
 ).all(storeId);
 exports.getSalaryById = async (id, storeId = 1) => db.prepare("SELECT * FROM salaries WHERE id = ? AND store_id = ?").get(id, storeId);
 exports.updateSalary = async ({ id, status, storeId = 1 }) => db.prepare("UPDATE salaries SET status = ? WHERE id = ? AND store_id = ?").run(status, id, storeId);
+

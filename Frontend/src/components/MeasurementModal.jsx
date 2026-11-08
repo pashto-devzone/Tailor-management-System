@@ -11,7 +11,7 @@ const collarTypes = ["گول کالر", "سیدھا کالر", "چھوٹا کا�
 const collarSizes = ["1.25 انچ", "1.5 انچ", "1.75 انچ", "2 انچ", "2.25 انچ", "2.5 انچ", "2.75 انچ", "3 انچ"];
 const bainTypes = ["گول بین", "سیدھا بین"];
 
-const bainSizes = ["0.5 انچ", "0.75 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
+const bainSizes = ["0.5 انچ", "0.75 انچ", "0.90 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
 const garmentDisplayLabels = {
   "shalwar kameez": "شلوار قمیض",
   sherwani: "شیروانی",
@@ -33,9 +33,9 @@ const damanOptions = ["گول دامن", "سیدھا دامن"];
 const bazuDesigns = ["کنی بازو", "گول بازو", "کف"];
 const bazuSizes = ["5 انچ", "5.5 انچ", "5.75 انچ", "6 انچ", "6.25 انچ", "6.5 انچ", "7 انچ"];
 const cuffTypes = ["عام کف", "سیدھا کف", "گول کف", "D کف"];
-const cuffSizes = ["8 انچ", "8.25 انچ", "8.5 انچ", "8.75 انچ", "9 انچ", "9.25 انچ", "9.5 انچ", "9.75 انچ", "10 انچ"];
+const cuffSizes = ["8 انچ", "8.25 انچ", "8.5 انچ", "8.75 انچ", "9 انچ", "9.25 انچ", "9.5 انچ", "9.75 انچ", "10 انچ", "10.25 انچ", "10.50 انچ"];
 const cuffMotaiOptions = ["2.5 انچ", "3 انچ"];
-const pataiOptions = ["0.5 انچ", "0.75 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
+const pataiOptions = ["0.5 انچ", "0.75 انچ", "0.90 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
 const bukramOptions = ["سنگل بکرم", "ڈبل بکرم"];
 const silaiOptions = [
   "سادہ سلائی",
@@ -95,7 +95,14 @@ const renderRadioGroup = ({ name, options, selected, onChange, className = "" })
   <div className={`radio-group ${className}`.trim()}>
     {options.map((option) => (
       <label key={option} className={`radio-option ${selected === option ? "selected" : ""}`}>
-        <input type="radio" name={name} value={option} checked={selected === option} onChange={(event) => onChange(event.target.value)} />
+        <input
+          type="radio"
+          name={name}
+          value={option}
+          checked={selected === option}
+          onClick={() => onChange(selected === option ? "" : option)}
+          onChange={() => {}}
+        />
         <span>{getOptionDisplayLabel(option)}</span>
       </label>
     ))}
@@ -192,6 +199,35 @@ export default function MeasurementModal({
         [section]: {
           ...prev.measurementDetails[section],
           [key]: value,
+          ...(section === "gala" && key === "type"
+            ? { collar_type: "", collar_size: "", bain_type: "", bain_size: "" }
+            : {}),
+          ...(section === "gala" && key === "collar_type" ? { collar_size: "" } : {}),
+          ...(section === "gala" && key === "bain_type" ? { bain_size: "" } : {}),
+          ...(section === "pocket" && key === "front" && !value ? { front_details: "" } : {}),
+          ...(section === "pocket" && key === "side" && !value ? { side_count: "", side_details: "" } : {}),
+          ...(section === "baazoo" && key === "design"
+            ? {
+                size: "",
+                extra: "",
+                cuff_type: "",
+                cuff_size: "",
+                cuff_extra: "",
+                cuff_motai: "",
+                cuff_motai_comment: "",
+              }
+            : {}),
+          ...(section === "baazoo" && key === "cuff_type"
+            ? { cuff_size: "", cuff_extra: "", cuff_motai: "", cuff_motai_comment: "" }
+            : {}),
+          ...(section === "patai" && key === "type" ? { patai_lambai: "" } : {}),
+          ...(section === "patai" && key === "design" ? { design_comment: "" } : {}),
+          ...(section === "bukram" && key === "type" ? { value: "" } : {}),
+          ...(section === "button_design" && key === "type" ? { comment: "" } : {}),
+          ...(section === "kaaj_design" && key === "type" ? { comment: "" } : {}),
+          ...(section === "silai" && key === "type"
+            ? { whatsapp_number: "", whatsapp_name: "", extra_style_design: "" }
+            : {}),
         },
       },
     }));
@@ -258,7 +294,7 @@ export default function MeasurementModal({
   const pocketSummary = buildPocketSummary(details.pocket);
 
   // Button + Kaaj (required URDU options)
-const buttonDesignOptions = ["فینسی رنگ", "سادہ رنگ", "ہک بٹن", "اسپیشل بٹن"];
+const buttonDesignOptions = ["فینسی رنگ بٹن", "سادہ رنگ بٹن", "ہک بٹن", "اسپیشل بٹن"];
 const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"];
 
 
@@ -273,27 +309,27 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
 
         <div className="measurement-modal-body">
           <form id="measurement-form" onSubmit={handleSubmit} className="measurement-modal-form">
-            <div className="measurement-context-banner" aria-label="Measurement context">
+            <div className="measurement-context-banner measurement-context-row" aria-label="Measurement context">
               <span><strong>گاہک:</strong> {customer?.name || selectedCustomer?.name || "نامعلوم"}</span>
               <span><strong>لباس:</strong> {getGarmentDisplayLabel(dressType)}</span>
+              <label className="measurement-context-kareegar">
+                <strong>کاریگر:</strong>
+                <input
+                  type="text"
+                  className="text-input-small"
+                  placeholder="سلائی کرنے والے کاریگر کا نام"
+                  value={details.kareegar?.name ?? ""}
+                  onChange={(event) => handleMeasurementChange("kareegar", "name", event.target.value)}
+                />
+              </label>
             </div>
-            <label className="form-field" style={{ marginTop: 8 }}>
-              <span>کاریگر</span>
-              <input
-                type="text"
-                className="text-input-small"
-                placeholder="سلائی کرنے والے کاریگر کا نام"
-                value={details.kareegar?.name ?? ""}
-                onChange={(event) => handleMeasurementChange("kareegar", "name", event.target.value)}
-              />
-            </label>
             {(["coat", "waistcoat", "waist coat"].includes(String(formData.dress_type).toLowerCase())) && (
               <div className="section-card">
                 <h4>{String(formData.dress_type).toLowerCase() === "coat" ? "کوٹ کے ناپ" : "ویسٹ کوٹ کے ناپ"}</h4>
                 <div className="measurement-fields">
                   {(String(formData.dress_type).toLowerCase() === "coat" ? MEASUREMENT_FIELD_ORDER.coat : MEASUREMENT_FIELD_ORDER.waistcoat).map((key) => (
                     <label className="form-field" key={key}><span>{{ lambai: "لمبائی", taira: "تیرا", gala: "گلا", seena: "چھاتی", kamar: "کمر", hips: "ہپس", bazoo: "بازو" }[key]}</span>
-                      <input type="text" inputMode="decimal" value={details.measurements[key] ?? ""} onChange={(e) => handleMeasurementChange("measurements", key, e.target.value)} />
+                      <input type="number" min="0" step="0.25" inputMode="decimal" value={details.measurements[key] ?? ""} onChange={(e) => handleMeasurementChange("measurements", key, e.target.value)} />
                     </label>
                   ))}
                 </div>
@@ -311,16 +347,6 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
             )}
             <div className="measurement-form-grid" style={{ display: ["coat", "waistcoat", "waist coat"].includes(String(formData.dress_type).toLowerCase()) ? "none" : undefined }}>
               <div className="measurement-column">
-                <div className="customer-select-section">
-                  {customer || selectedCustomer ? (
-                    <div className="selected-customer-row">
-                    <span>نام: {(customer || selectedCustomer).name}</span>
-                    <span>فون: {(customer || selectedCustomer).phone}</span>
-                      <span>گاہک نمبر: {(customer || selectedCustomer).id}</span>
-                    </div>
-                  ) : null}
-                </div>
-
                 <div className="section-card">
                   <h4>ناپ</h4>
                   <div className="measurement-fields">
@@ -565,6 +591,14 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
 
                     </div>
 
+                    <label className="form-field farmaish-comment-field">
+                      <span>گلا کے تبصرے</span>
+                      <input
+                        type="text"
+                        value={details.additional_comments?.gala ?? ""}
+                        onChange={(event) => handleMeasurementChange("additional_comments", "gala", event.target.value)}
+                      />
+                    </label>
                   </div>
 
                   <div className="section-card">
@@ -582,6 +616,14 @@ const kaajDesignOptions = ["ڈبل کاج", "اسٹڈ کاج", "سادہ کاج"
                     ) : (
                       renderSummaryCard(details.daaman.type, () => expandGroup("daaman"))
                     )}
+                    <label className="form-field farmaish-comment-field">
+                      <span>دامن کے تبصرے</span>
+                      <input
+                        type="text"
+                        value={details.additional_comments?.daman ?? ""}
+                        onChange={(event) => handleMeasurementChange("additional_comments", "daman", event.target.value)}
+                      />
+                    </label>
                   </div>
 
                   <div className="section-card">

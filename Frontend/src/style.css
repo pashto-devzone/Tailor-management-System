@@ -18,6 +18,12 @@
   --info-soft: #CFFAFE;
   --shadow: 0 22px 60px rgba(15, 23, 42, 0.08);
   font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --urdu-font: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Nirmala UI", serif;
+}
+
+[dir="rtl"], [lang="ur"], .measurement-modal, .measurement-preview-page {
+  font-family: var(--urdu-font);
+  font-variant-ligatures: contextual;
 }
 
 * {
@@ -275,6 +281,28 @@ button {
   align-items: center;
   padding: 1.75rem;
   overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  transition: all 0.2s ease;
+  will-change: transform, box-shadow;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.08);
+  border-color: rgba(30, 58, 138, 0.18);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-card {
+    transition: none;
+  }
+  .stat-card:hover {
+    transform: none;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
+  }
 }
 
 .stat-icon {
@@ -285,6 +313,20 @@ button {
   border-radius: 16px;
   font-size: 1.15rem;
   color: var(--primary);
+  transition: all 0.2s ease;
+}
+
+.stat-card:hover .stat-icon {
+  transform: scale(1.05);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stat-icon {
+    transition: none;
+  }
+  .stat-card:hover .stat-icon {
+    transform: none;
+  }
 }
 
 .bg-primary-soft {
@@ -356,6 +398,17 @@ button {
 .stat-card p {
   margin: 0;
   color: var(--muted);
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.stat-card h3 {
+  margin: 0.25rem 0 0;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.02em;
 }
 
 .stat-change {
@@ -1114,6 +1167,26 @@ label:last-child {
   background: var(--bg);
 }
 
+.measurement-context-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) minmax(220px, 1.2fr);
+  align-items: center;
+}
+
+.measurement-context-kareegar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.measurement-context-kareegar input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .measurement-modal {
   width: 100%;
   max-height: 92vh;
@@ -1179,6 +1252,9 @@ label:last-child {
 .measurement-modal .measurement-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0.55rem 0.75rem; }
 .measurement-modal .section-card > .measurement-fields + .form-field { margin-top: 0.65rem; }
 .measurement-modal .textarea-field textarea { min-height: 4.5rem; resize: vertical; }
+.farmaish-comment-field {
+  margin-top: 0.45rem;
+}
 
 /* Coat and Waist Coat forms are intentionally compact and scroll within the app. */
 .garment-measurement-modal {
@@ -1311,7 +1387,7 @@ label:last-child {
 .form-field span {
   font-weight: 700;
   color: var(--text);
-  font-size: 0.7rem;
+  font-size: 0.8rem;
 }
 
 .form-field input,
@@ -1322,7 +1398,7 @@ label:last-child {
   border-radius: 8px;
   background: var(--background);
   padding: 0.3rem 0.45rem;
-  font-size: 0.72rem;
+  font-size: 0.8rem;
   line-height: 1.3;
   color: var(--text);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
@@ -1495,11 +1571,58 @@ label:last-child {
 .measurement-fields .form-field span {
   width: auto;
   white-space: nowrap;
+  font-size: 0.95rem;
+  line-height: 1.25;
 }
 
 .measurement-modal .half-seena-field span {
   white-space: normal;
   line-height: 1.2;
+}
+
+.measurement-modal:not(.garment-measurement-modal) .section-card h4,
+.measurement-modal:not(.garment-measurement-modal) .section-subtitle,
+.measurement-modal:not(.garment-measurement-modal) .form-field span,
+.measurement-modal:not(.garment-measurement-modal) .radio-option span,
+.measurement-modal:not(.garment-measurement-modal) .checkbox-row span,
+.measurement-modal:not(.garment-measurement-modal) .selected-option-label {
+  font-family: var(--urdu-font);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.measurement-modal:not(.garment-measurement-modal) .radio-option span,
+.measurement-modal:not(.garment-measurement-modal) .checkbox-row span {
+  overflow-wrap: anywhere;
+}
+
+/* Shared editing controls only; print components use separate selectors below. */
+.measurement-modal .form-field span,
+.measurement-modal .section-subtitle,
+.measurement-modal .section-card h4,
+.measurement-modal .radio-option,
+.measurement-modal .checkbox-row,
+.measurement-modal .radio-option span,
+.measurement-modal .checkbox-row span,
+.measurement-modal .selected-option-label,
+.measurement-modal .garment-choice-label,
+.measurement-modal .garment-choice-status,
+.measurement-modal .garment-options label,
+.measurement-modal .garment-options legend,
+.measurement-modal .measurement-context-row > span,
+.measurement-modal .measurement-context-kareegar {
+  font-size: 17px;
+  line-height: 1.4;
+}
+
+.measurement-modal .form-field input,
+.measurement-modal .form-field select,
+.measurement-modal .form-field textarea {
+  font-size: 0.90rem;
+}
+
+.measurement-modal .measurement-fields .form-field span {
+  font-size: 17px;
 }
 
 .measurement-fields .form-field input {
@@ -1527,6 +1650,14 @@ label:last-child {
     grid-template-columns: 1fr;
   }
 
+  .measurement-context-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .measurement-context-kareegar {
+    grid-column: 1 / -1;
+  }
+
   .design-sections-grid {
     grid-template-columns: 1fr;
   }
@@ -1541,6 +1672,16 @@ label:last-child {
 
   .measurement-fields .form-field {
     grid-template-columns: minmax(0, 1fr) 110px;
+  }
+}
+
+@media (max-width: 560px) {
+  .measurement-context-row {
+    grid-template-columns: 1fr;
+  }
+
+  .measurement-context-kareegar {
+    grid-column: auto;
   }
 }
 
