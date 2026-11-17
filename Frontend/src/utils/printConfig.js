@@ -1,3 +1,5 @@
+import { getSettings } from "../services/api";
+
 /**
  * Shared print configuration for the desktop measurement-slip printing flow.
  *
@@ -41,13 +43,12 @@ export const DEFAULT_PRINT_SETTINGS = {
   marginRight: 2.5,
   // Extra padding inside the margins (applied to the print sheet).
   innerPadding: 0.5,
-  // Header (shop name, section titles) stays bold but compact so it cannot
-  // wrap into the table on the narrow slip.
-  headerFontSize: 10,
+  // Header and table fonts scale together from the selected paper size.
+  headerFontSize: 13.3,
   headerFontWeight: 700,
   // Single control for measurement-table values in every print entry point.
-  tableFontSize: 9,
-  farmaishFontSize: 9,
+  tableFontSize: 12.2,
+  farmaishFontSize: 12.2,
 };
 
 export const PRINT_LIMITS = {
@@ -195,8 +196,8 @@ export function normalizePrintSettings(raw) {
   [marginLeft, marginRight] = fitPair(marginLeft, marginRight, widthMm, "Horizontal");
 
   const headerFontSize = normalizeBoundedNumber(src.headerFontSize, PRINT_LIMITS.headerFontMin, PRINT_LIMITS.headerFontMax, DEFAULT_PRINT_SETTINGS.headerFontSize, "Header font size", errors);
-  const tableFontSize = 9;
-  const farmaishFontSize = 9;
+  const tableFontSize = normalizeBoundedNumber(src.tableFontSize, PRINT_LIMITS.tableFontMin, PRINT_LIMITS.tableFontMax, DEFAULT_PRINT_SETTINGS.tableFontSize, "Measurement table font size", errors);
+  const farmaishFontSize = normalizeBoundedNumber(src.farmaishFontSize, PRINT_LIMITS.tableFontMin, PRINT_LIMITS.tableFontMax, DEFAULT_PRINT_SETTINGS.farmaishFontSize, "Farmaish / comment font size", errors);
 
   let headerFontWeight = DEFAULT_PRINT_SETTINGS.headerFontWeight;
   if (src.headerFontWeight !== undefined && src.headerFontWeight !== null && src.headerFontWeight !== "") {
@@ -232,18 +233,39 @@ export function normalizePrintSettings(raw) {
  */
 export function printSettingsCssVars(settings) {
   const { widthMm, heightMm } = paperDimensionsMm(settings);
+  const scale = Math.min(widthMm / 107.95, heightMm / 146.05);
   return [
     `--ps-paper-w: ${round2(widthMm)}mm`,
     `--ps-paper-h: ${round2(heightMm)}mm`,
+    `--ps-border-width: ${round2(0.3 * scale)}mm`,
     `--ps-pad-top: ${round2(settings.marginTop + settings.innerPadding)}mm`,
     `--ps-pad-right: ${round2(settings.marginRight + settings.innerPadding)}mm`,
     `--ps-pad-bottom: ${round2(settings.marginBottom + settings.innerPadding)}mm`,
     `--ps-pad-left: ${round2(settings.marginLeft + settings.innerPadding)}mm`,
-    `--ps-header-size: ${settings.headerFontSize}pt`,
+    `--ps-scale: ${round2(scale)}`,
+    `--ps-base-size: ${round2(settings.tableFontSize * scale)}pt`,
+    `--ps-header-size: ${round2(settings.headerFontSize * scale)}pt`,
+    `--ps-shop-size: ${round2((settings.headerFontSize + 1) * scale)}pt`,
     `--ps-header-weight: ${settings.headerFontWeight}`,
-    `--ps-table-size: ${settings.tableFontSize}pt`,
-    `--ps-farmaish-size: ${settings.farmaishFontSize}pt`,
+    `--ps-label-size: ${round2(settings.tableFontSize * scale)}pt`,
+    `--ps-value-size: ${round2(settings.tableFontSize * scale)}pt`,
+    `--ps-table-size: ${round2(settings.tableFontSize * scale)}pt`,
+    `--ps-farmaish-size: ${round2(settings.farmaishFontSize * scale)}pt`,
+    `--ps-space-xs: ${round2(0.6 * scale)}mm`,
+    `--ps-space-sm: ${round2(scale)}mm`,
+    `--ps-space-md: ${round2(1.5 * scale)}mm`,
+    `--ps-cell-pad-y: ${round2(0.75 * scale)}mm`,
+    `--ps-cell-pad-x: ${round2(scale)}mm`,
+    `--ps-notes-pad-x: ${round2(1.5 * scale)}mm`,
+    `--ps-footer-size: ${round2(8.5 * scale)}pt`,
   ].join(";");
+}
+
+/** Fetch the saved configuration when a preview opens or printing begins. */
+export async function getActivePrintConfig() {
+  const response = await getSettings();
+  const { settings } = normalizePrintSettings(response?.data?.printSettings);
+  return { ...settings, ...paperDimensionsMm(settings) };
 }
 
 /** Human-readable summary of the effective settings. */

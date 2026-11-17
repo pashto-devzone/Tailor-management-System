@@ -4,10 +4,19 @@ import {
   getOrderedMeasurementEntries,
   normalizeMeasurementData,
   repairMojibakeText,
+  cleanPrintMeasurementValue,
 } from "../utils/measurementUtils";
+import {
+  normalizePrintSettings,
+  paperDimensionsMm,
+  printSettingsCssVars,
+} from "../utils/printConfig";
 
 export default function MeasurementPrint({ shop, settings, customer, measurement, order }) {
   if (!customer || !measurement) return null;
+  const printSettings = normalizePrintSettings(settings?.printSettings).settings;
+  const paper = paperDimensionsMm(printSettings);
+  const printCssVars = printSettingsCssVars(printSettings);
 
   const shopName = settings?.shopName || shop?.name || "Tailor Shop";
   const phone = settings?.phone || shop?.phone || "";
@@ -50,7 +59,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
   const dressType = String(order?.dress_type || measurement?.dress_type || "shalwar kameez").toLowerCase().replace(/\s+/g, "");
   const measurementRows = getOrderedMeasurementEntries(values, dressType)
     .filter(([, value]) => safe(value))
-    .map(([key, value]) => ({ label: getMeasurementLabel(key), value }));
+    .map(([key, value]) => ({ label: getMeasurementLabel(key), value: cleanPrintMeasurementValue(value) }));
 
   const farmaishRows = getFarmaishRows(details);
 
@@ -75,6 +84,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
   return (
     <div className="print-only measurement-preview-content">
       <style>{`
+        :root { ${printCssVars}; }
         .print-only {
           direction: rtl;
           font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Nirmala UI", serif;
@@ -88,7 +98,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
 
         .measurement-preview-content .print-area {
           box-sizing: border-box;
-          width: calc(148mm - 14mm);
+          width: var(--ps-paper-w);
           max-width: none;
           margin: 0 auto;
           padding: 0;
@@ -96,30 +106,30 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
         }
 
         .measurement-print-card {
-          width: calc(148mm - 14mm);
-          max-width: calc(148mm - 14mm);
+          width: var(--ps-paper-w);
+          max-width: var(--ps-paper-w);
           margin: 0 auto;
           box-sizing: border-box;
-          border: 1.2px solid #111;
-          padding: 3mm;
+          border: var(--ps-border-width) solid #111;
+          padding: var(--ps-pad-top) var(--ps-pad-right) var(--ps-pad-bottom) var(--ps-pad-left);
           color: #000;
           background: #fff;
           -webkit-print-color-adjust: exact;
           print-color-adjust: exact;
           display: flex;
           flex-direction: column;
-          gap: 2mm;
+          gap: var(--ps-space-md);
           min-height: 0;
-          height: calc(210mm - 14mm);
+          height: var(--ps-paper-h);
         }
 
         .measurement-preview-content .measurement-print-card {
-          width: calc(148mm - 14mm);
+          width: var(--ps-paper-w);
           max-width: none;
-          height: calc(210mm - 14mm);
+          height: var(--ps-paper-h);
           margin: 0;
-          padding: 2mm;
-          border: 1.2px solid #111;
+          padding: var(--ps-pad-top) var(--ps-pad-right) var(--ps-pad-bottom) var(--ps-pad-left);
+          border: var(--ps-border-width) solid #111;
           background: #fff;
         }
 
@@ -127,10 +137,10 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
           display: grid;
           grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
           direction: ltr;
-          gap: 5px;
+          gap: var(--ps-space-sm);
           align-items: flex-start;
-          padding-bottom: 3px;
-          border-bottom: 1px solid #111;
+          padding-bottom: var(--ps-space-sm);
+          border-bottom: var(--ps-border-width) solid #111;
           line-height: 1.35;
           min-width: 0;
         }
@@ -150,25 +160,25 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
 
         .print-header-title {
           font-weight: 800;
-          font-size: 18px;
-          margin-bottom: 2px;
+          font-size: var(--ps-shop-size);
+          margin-bottom: var(--ps-space-xs);
           line-height: 1.1;
         }
 
         .print-mini {
-          font-size: 9pt;
+          font-size: var(--ps-base-size);
           line-height: 1.35;
-          margin-top: 1px;
+          margin-top: var(--ps-space-xs);
           overflow-wrap: break-word;
           word-break: normal;
         }
 
         .print-meta-grid {
-          margin-top: 1px;
+          margin-top: var(--ps-space-xs);
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 2px 5px;
-          font-size: 9pt;
+          gap: var(--ps-space-xs) var(--ps-space-sm);
+          font-size: var(--ps-base-size);
           min-width: 0;
           direction: ltr;
         }
@@ -176,7 +186,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
         .meta-row {
           display: flex;
           justify-content: space-between;
-          gap: 6px;
+          gap: var(--ps-space-sm);
           line-height: 1.5;
           direction: ltr;
           unicode-bidi: isolate;
@@ -210,7 +220,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
           display: grid;
           grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
           align-items: stretch;
-          gap: 2mm;
+          gap: var(--ps-space-md);
           flex: 1 1 auto;
           width: 100%;
           min-height: 0;
@@ -226,9 +236,9 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
         }
 
         .section-title {
-          font-size: 18px;
+          font-size: var(--ps-header-size);
           font-weight: 800;
-          margin: 0 0 6px;
+          margin: 0 0 var(--ps-space-md);
           text-align: right;
           line-height: 1.2;
         }
@@ -260,9 +270,9 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
 
         .fixed-cell {
           box-sizing: border-box;
-          border: 1px solid #111;
-          padding: 2px 4px;
-          font-size: var(--ps-table-size, 9pt);
+          border: var(--ps-border-width) solid #111;
+          padding: var(--ps-cell-pad-y) var(--ps-cell-pad-x);
+          font-size: var(--ps-label-size);
           line-height: 1.35;
           vertical-align: middle;
           overflow-wrap: anywhere;
@@ -286,9 +296,9 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
         }
 
         .notes-block {
-          border: 1px solid #111;
-          padding: 1.5mm 2mm;
-          font-size: var(--ps-farmaish-size, 9pt);
+          border: var(--ps-border-width) solid #111;
+          padding: var(--ps-space-sm) var(--ps-notes-pad-x);
+          font-size: var(--ps-farmaish-size);
           font-weight: 750;
           line-height: 1.3;
           white-space: pre-wrap;
@@ -298,10 +308,10 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
 
         .print-footer {
           margin-top: 0;
-          font-size: 12px;
+          font-size: var(--ps-base-size);
           text-align: center;
-          border-top: 1px solid #111;
-          padding-top: 6px;
+          border-top: var(--ps-border-width) solid #111;
+          padding-top: var(--ps-space-md);
         }
 
         .print-footer p {
@@ -309,8 +319,8 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
         }
 
         @page {
-          size: A5 portrait;
-          margin: 7mm;
+          size: ${paper.widthMm}mm ${paper.heightMm}mm;
+          margin: 0;
         }
 
         @media print {
@@ -398,11 +408,11 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
             box-sizing: border-box !important;
             width: 100% !important;
             min-height: 0 !important;
-            height: calc(210mm - 14mm) !important;
+            height: var(--ps-paper-h) !important;
             max-height: none !important;
             margin: 0 !important;
-            padding: 2mm !important;
-            border: 1.2px solid #000 !important;
+            padding: var(--ps-pad-top) var(--ps-pad-right) var(--ps-pad-bottom) var(--ps-pad-left) !important;
+            border: var(--ps-border-width) solid #000 !important;
             box-shadow: none !important;
             overflow: hidden !important;
           }
@@ -452,8 +462,8 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
           }
 
           .fixed-cell {
-            padding: 1.5px 3px;
-            font-size: var(--ps-table-size, 9pt) !important;
+            padding: var(--ps-cell-pad-y) var(--ps-cell-pad-x);
+            font-size: var(--ps-label-size) !important;
             font-weight: 750;
             line-height: 1.15;
             vertical-align: middle;
@@ -540,7 +550,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
 
           {notes ? (
             <div>
-              <div className="section-title" style={{ fontSize: 17, marginTop: 2 }}>
+              <div className="section-title notes-title">
                 {"\u062e\u0635\u0648\u0635\u06cc \u0646\u0648\u0679\u0633:"}
               </div>
               <div className="notes-block">{notes}</div>

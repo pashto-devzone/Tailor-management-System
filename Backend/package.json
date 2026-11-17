@@ -1,6 +1,6 @@
 {
   "name": "tailor-shop-backend",
-  "version": "1.6.2",
+  "version": "1.6.3",
   "description": "Tailor Shop Management System backend with Node.js, Express, and PostgreSQL.",
   "main": "server.js",
   "engines": {

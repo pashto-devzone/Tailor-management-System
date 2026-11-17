@@ -5,8 +5,14 @@ import {
   getOrderedMeasurementEntries,
   normalizeMeasurementData,
   repairMojibakeText,
+  cleanPrintMeasurementValue,
 } from "../utils/measurementUtils";
-import { normalizePrintSettings, printSettingsCssVars } from "../utils/printConfig";
+import {
+  getActivePrintConfig,
+  normalizePrintSettings,
+  paperDimensionsMm,
+  printSettingsCssVars,
+} from "../utils/printConfig";
 
 export default function MeasurementPreviewModal({
   open,
@@ -30,11 +36,27 @@ export default function MeasurementPreviewModal({
   // One configuration-to-print path: the saved Print Settings (or the safe
   // defaults) drive this preview AND the Electron print document. The same
   // resolved object is passed to webContents.print via IPC.
-  const printSettings = useMemo(
+  const [printSettings, setPrintSettings] = useState(
     () => normalizePrintSettings(settings?.printSettings).settings,
-    [settings?.printSettings],
   );
   const printCssVars = useMemo(() => printSettingsCssVars(printSettings), [printSettings]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    let cancelled = false;
+    getActivePrintConfig()
+      .then((config) => {
+        if (!cancelled) setPrintSettings(config);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setPrintError(error?.response?.data?.message || error?.message || "Unable to load the latest print settings.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open]);
 
   // Report (instead of silently clipping) when the complete slip is taller
   // than the selected paper. Measures the natural height after Urdu fonts
@@ -71,7 +93,7 @@ export default function MeasurementPreviewModal({
     .replace(/\s+/g, "");
   const measurementRows = getOrderedMeasurementEntries(details.measurements, dressType)
     .filter(([, value]) => safe(value))
-    .map(([key, value]) => ({ label: getMeasurementLabel(key), value }));
+    .map(([key, value]) => ({ label: getMeasurementLabel(key), value: cleanPrintMeasurementValue(value) }));
   const farmaishRows = getFarmaishRows(details);
   const noteValue = measurement?.comments != null && String(measurement.comments).trim() !== ""
     ? measurement.comments
@@ -120,9 +142,19 @@ export default function MeasurementPreviewModal({
     setPrintError("");
     setPrinting(true);
     try {
+      const activePrintConfig = await getActivePrintConfig();
+      setPrintSettings(activePrintConfig);
+      const { widthMm, heightMm } = paperDimensionsMm(activePrintConfig);
+      let printStyle = document.getElementById("measurement-active-print-config");
+      if (!printStyle) {
+        printStyle = document.createElement("style");
+        printStyle.id = "measurement-active-print-config";
+        document.head.appendChild(printStyle);
+      }
+      printStyle.textContent = `:root{${printSettingsCssVars(activePrintConfig)}}@page{size:${widthMm}mm ${heightMm}mm;margin:0}`;
       const printPage = window.electronAPI?.printCurrentPage;
       if (printPage) {
-        const result = await printPage(printSettings);
+        const result = await printPage(activePrintConfig);
         if (result?.canceled) return;
         if (result?.ok === false) {
           throw new Error(result.message || "Electron could not start printing.");
@@ -194,9 +226,11 @@ export default function MeasurementPreviewModal({
                 display: flex;
                 flex-direction: column;
                 width: var(--ps-paper-w);
-                min-height: var(--ps-paper-h);
+                height: var(--ps-paper-h);
+                min-height: 0;
+                flex: 0 0 auto;
                 padding: var(--ps-pad-top) var(--ps-pad-right) var(--ps-pad-bottom) var(--ps-pad-left);
-                border: 1px solid #111;
+                border: var(--ps-border-width) solid #111;
                 background: #fff;
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
               }
@@ -206,7 +240,7 @@ export default function MeasurementPreviewModal({
                 display: flex;
                 flex: 1 1 auto;
                 flex-direction: column;
-                gap: 1.5mm;
+                gap: var(--ps-space-md);
                 width: 100%;
                 min-height: 0;
                 background: #fff;
@@ -230,25 +264,25 @@ export default function MeasurementPreviewModal({
               .measurement-preview-header {
                 display: block;
                 direction: ltr;
-                padding-bottom: 1mm;
-                border-bottom: 1px solid #111;
+                padding-bottom: var(--ps-space-sm);
+                border-bottom: var(--ps-border-width) solid #111;
                 line-height: 1.35;
                 min-width: 0;
               }
               .measurement-preview-meta {
                 display: grid;
                 grid-template-columns: repeat(3, minmax(0, 1fr));
-                gap: 0.6mm 1mm;
+                gap: var(--ps-space-xs) var(--ps-space-sm);
                 min-width: 0;
                 direction: ltr;
                 font-family: Arial, sans-serif;
-                font-size: max(9pt, var(--ps-table-size));
+                font-size: var(--ps-base-size);
                 line-height: 1.25;
               }
               .measurement-preview-meta-row {
                 display: grid;
                 grid-template-columns: max-content minmax(0, 1fr);
-                gap: 1mm;
+                gap: var(--ps-space-sm);
                 min-width: 0;
                 direction: ltr;
                 unicode-bidi: isolate;
@@ -273,10 +307,10 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-shop-name {
                 font-family: Arial, sans-serif;
-                font-size: max(11pt, calc(var(--ps-header-size) + 1pt));
+                font-size: var(--ps-shop-size);
                 font-weight: 800;
                 line-height: 1.3;
-                margin-bottom: 1.5mm;
+                margin-bottom: var(--ps-space-md);
                 overflow-wrap: normal;
                 word-break: normal;
                 hyphens: none;
@@ -296,7 +330,7 @@ export default function MeasurementPreviewModal({
               .measurement-preview-body {
                 display: grid;
                 grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
-                gap: 1.5mm;
+                gap: var(--ps-space-md);
                 flex: 1 1 auto;
                 min-height: 0;
               }
@@ -308,7 +342,7 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-section-title {
                 flex: 0 0 auto;
-                margin: 0 0 1mm;
+                margin: 0 0 var(--ps-space-sm);
                 font-size: var(--ps-header-size);
                 line-height: 1.35;
                 font-weight: var(--ps-header-weight);
@@ -332,9 +366,9 @@ export default function MeasurementPreviewModal({
                 display: flex;
                 align-items: center;
                 min-width: 0;
-                border: 1px solid #111;
-                padding: 0.75mm 1mm;
-                font-size: var(--ps-table-size);
+                border: var(--ps-border-width) solid #111;
+                padding: var(--ps-cell-pad-y) var(--ps-cell-pad-x);
+                font-size: var(--ps-label-size);
                 line-height: 1.35;
                 font-weight: 750;
                 overflow-wrap: anywhere;
@@ -353,15 +387,15 @@ export default function MeasurementPreviewModal({
                 text-align: right;
               }
               .measurement-preview-notes-title {
-                margin: 0 0 1mm;
+                margin: 0 0 var(--ps-space-sm);
                 font-size: var(--ps-header-size);
                 font-weight: var(--ps-header-weight);
                 line-height: 1.4;
               }
               .measurement-preview-notes {
-                border: 1px solid #111;
-                padding: 1mm 1.5mm;
-                font-size: var(--ps-table-size);
+                border: var(--ps-border-width) solid #111;
+                padding: var(--ps-space-sm) var(--ps-notes-pad-x);
+                font-size: var(--ps-value-size);
                 line-height: 1.45;
                 font-weight: 750;
                 white-space: pre-wrap;
@@ -370,11 +404,11 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-footer {
                 flex: 0 0 auto;
-                border-top: 1px solid #111;
-                padding-top: 1.5mm;
+                border-top: var(--ps-border-width) solid #111;
+                padding-top: var(--ps-space-md);
                 text-align: center;
                 direction: ltr;
-                font: 8.5pt/1.3 Arial, sans-serif;
+                font: var(--ps-footer-size)/1.3 Arial, sans-serif;
               }
               @media (max-width: 700px) {
                 .measurement-print-sheet {
@@ -386,6 +420,16 @@ export default function MeasurementPreviewModal({
                 }
               }
               @media print {
+                .measurement-print-sheet {
+                  width: var(--ps-paper-w) !important;
+                  height: var(--ps-paper-h) !important;
+                  min-height: 0 !important;
+                  flex: 0 0 auto !important;
+                  margin: 0 !important;
+                  box-shadow: none !important;
+                  break-inside: avoid;
+                  page-break-after: avoid;
+                }
                 .measurement-preview-backdrop > .measurement-preview-dialog > div > .measurement-preview-content {
                   display: block !important;
                 }
@@ -399,6 +443,10 @@ export default function MeasurementPreviewModal({
                 .measurement-preview-meta {
                   grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
                 }
+              }
+              @page {
+                size: ${paperDimensionsMm(printSettings).widthMm}mm ${paperDimensionsMm(printSettings).heightMm}mm;
+                margin: 0;
               }
             `}</style>
             <div className="measurement-print-sheet" ref={sheetRef}>

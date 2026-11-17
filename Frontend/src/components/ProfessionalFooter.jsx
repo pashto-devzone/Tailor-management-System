@@ -8,7 +8,7 @@ const VERSION =
   versionJson?.current ??
   versionJson?.version ??
   versionJson?.latest ??
-  "1.6.2";
+  "1.6.3";
 
 export default function ProfessionalFooter() {
   const [now] = useState(() => Date.now());

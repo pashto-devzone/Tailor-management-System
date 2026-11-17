@@ -561,10 +561,10 @@ const DEFAULT_PRINT_CONFIG = {
   marginLeft: 2.5,
   marginRight: 2.5,
   innerPadding: 0.5,
-  headerFontSize: 10,
+  headerFontSize: 13.3,
   headerFontWeight: 700,
-  tableFontSize: 9,
-  farmaishFontSize: 9,
+  tableFontSize: 12.2,
+  farmaishFontSize: 12.2,
 };
 
 const clampNumber = (value, min, max, fallback) => {
@@ -609,17 +609,42 @@ function normalizePrintConfig(raw) {
  * Print-document overrides generated from the resolved configuration. The
  * preview's extracted <style> already carries the same --ps-* variables (the
  * renderer passed the identical config), so this block only pins the page
- * geometry: sheet size, printable padding and the @page rule. The sheet is
- * 1mm shorter than the paper so content can never spill onto a second page;
- * overflow is detected and reported instead of silently clipped.
+ * geometry: sheet size, printable padding and the @page rule. Overflow is
+ * detected and reported rather than silently clipped.
  */
 function buildMeasurementPrintCss(cfg) {
   const pad = (side) => round2(side + cfg.innerPadding);
+  const scale = Math.min(cfg.widthMm / 107.95, cfg.heightMm / 146.05);
   return `
       html,body{margin:0!important;padding:0!important;width:${round2(cfg.widthMm)}mm!important;height:auto!important;background:#fff!important;color:#000!important}
+      :root{
+        --ps-paper-w:${round2(cfg.widthMm)}mm;
+        --ps-paper-h:${round2(cfg.heightMm)}mm;
+        --ps-border-width:${round2(0.3 * scale)}mm;
+        --ps-pad-top:${pad(cfg.marginTop)}mm;
+        --ps-pad-right:${pad(cfg.marginRight)}mm;
+        --ps-pad-bottom:${pad(cfg.marginBottom)}mm;
+        --ps-pad-left:${pad(cfg.marginLeft)}mm;
+        --ps-scale:${round2(scale)};
+        --ps-base-size:${round2(cfg.tableFontSize * scale)}pt;
+        --ps-header-size:${round2(cfg.headerFontSize * scale)}pt;
+        --ps-shop-size:${round2((cfg.headerFontSize + 1) * scale)}pt;
+        --ps-header-weight:${cfg.headerFontWeight};
+        --ps-label-size:${round2(cfg.tableFontSize * scale)}pt;
+        --ps-value-size:${round2(cfg.tableFontSize * scale)}pt;
+        --ps-table-size:${round2(cfg.tableFontSize * scale)}pt;
+        --ps-farmaish-size:${round2(cfg.farmaishFontSize * scale)}pt;
+        --ps-space-xs:${round2(0.6 * scale)}mm;
+        --ps-space-sm:${round2(scale)}mm;
+        --ps-space-md:${round2(1.5 * scale)}mm;
+        --ps-cell-pad-y:${round2(0.75 * scale)}mm;
+        --ps-cell-pad-x:${round2(scale)}mm;
+        --ps-notes-pad-x:${round2(1.5 * scale)}mm;
+        --ps-footer-size:${round2(8.5 * scale)}pt;
+      }
       .measurement-preview-backdrop{display:block!important;position:static!important;padding:0!important;background:#fff!important}
       .measurement-preview-content{display:block!important;position:static!important;width:100%!important;height:auto!important;overflow:visible!important;padding:0!important}
-      .measurement-print-sheet{box-sizing:border-box!important;display:flex!important;flex-direction:column!important;width:${round2(cfg.widthMm)}mm!important;height:calc(${round2(cfg.heightMm)}mm - 1mm)!important;min-height:0!important;margin:0 auto!important;padding:${pad(cfg.marginTop)}mm ${pad(cfg.marginRight)}mm ${pad(cfg.marginBottom)}mm ${pad(cfg.marginLeft)}mm!important;overflow:hidden!important;background:#fff!important;border:1px solid #111!important;box-shadow:none!important;break-inside:avoid;page-break-after:avoid}
+      .measurement-print-sheet{box-sizing:border-box!important;display:flex!important;flex-direction:column!important;width:${round2(cfg.widthMm)}mm!important;height:${round2(cfg.heightMm)}mm!important;min-height:0!important;margin:0 auto!important;padding:${pad(cfg.marginTop)}mm ${pad(cfg.marginRight)}mm ${pad(cfg.marginBottom)}mm ${pad(cfg.marginLeft)}mm!important;background:#fff!important;border:var(--ps-border-width) solid #111!important;box-shadow:none!important;break-inside:avoid;page-break-after:avoid}
       .measurement-preview-backdrop .measurement-preview-page{display:flex!important;flex:1 1 auto!important;width:100%!important;min-height:0!important;border:none!important;box-shadow:none!important;margin:0!important}
       .measurement-preview-header{display:block!important}
       .measurement-preview-meta{grid-template-columns:repeat(3,minmax(0,1fr))!important}
@@ -713,11 +738,11 @@ async function createMeasurementPdfBuffer(sourceWindow, printConfig) {
     return await printWindow.webContents.printToPDF({
       printBackground: true,
       landscape: false,
-      // printToPDF pageSize takes INCHES; preferCSSPageSize keeps the @page
+      // printToPDF pageSize takes inches; preferCSSPageSize keeps the @page
       // rule (same millimeter values) authoritative when both are present.
       pageSize: {
-        width: Math.round((cfg.widthMm / 25.4) * 1000) / 1000,
-        height: Math.round((cfg.heightMm / 25.4) * 1000) / 1000,
+        width: Math.round((cfg.widthMm / 25.4) * 100) / 100,
+        height: Math.round((cfg.heightMm / 25.4) * 100) / 100,
       },
       // PrintToPDFMargins are flat inch values (there is no marginType);
       // zero them so the sheet CSS padding alone defines the printable area.

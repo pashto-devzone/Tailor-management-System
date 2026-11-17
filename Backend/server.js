@@ -88,7 +88,7 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Tailor Shop Management API is running",
-    data: { version: "1.6.2" },
+    data: { version: "1.6.3" },
   });
 });
 

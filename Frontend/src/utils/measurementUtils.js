@@ -473,6 +473,9 @@ export const measurementListFields = [
 
 export const getMeasurementLabel = (key) => repairMojibake(measurementLabelMap[key] || key);
 
+export const cleanPrintMeasurementValue = (value) =>
+  String(value ?? "").replace(/\s*(?:انچ|inch(?:es)?)\s*/giu, "").trim();
+
 export const formatMeasurementList = (details) =>
   measurementListFields.map((key) => ({ label: measurementLabelMap[key], value: details.measurements[key] || "-" }));
 
@@ -524,7 +527,7 @@ export const getFarmaishRows = (details) => {
   const push = (label, value) => {
     const v = value === undefined || value === null ? "" : String(value).trim();
     if (!v) return;
-    rows.push({ label: repairMojibake(label), value: repairMojibake(v) });
+    rows.push({ label: repairMojibake(label), value: repairMojibake(cleanPrintMeasurementValue(v)) });
   };
 
   const d = details || {};

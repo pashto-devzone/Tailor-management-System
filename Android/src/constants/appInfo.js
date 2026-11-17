@@ -10,7 +10,7 @@ export const appInfo = {
   version:
     Constants?.manifest?.version ||
     Constants?.expoConfig?.version ||
-    '1.6.2',
+    '1.6.3',
   developer: 'Yaseen Arman',
   description: 'Tailor Management System',
 };
