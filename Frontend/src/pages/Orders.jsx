@@ -21,6 +21,7 @@ import PaymentModal from "../components/PaymentModal";
 import OrderPrint from "../components/OrderPrint";
 import MeasurementPreviewModal from "../components/MeasurementPreviewModal";
 import { useShop } from "../contexts/ShopContext";
+import { cleanPrintMeasurementValue, getOrderedMeasurementEntries } from "../utils/measurementUtils";
 
 const hasCompleteGarmentMeasurements = (record, dressType) => {
   const type = String(dressType || "").toLowerCase();
@@ -477,7 +478,7 @@ export default function Orders() {
   const downloadInvoicePdf = async (order) => {
     let invoiceMeasurements = null;
     try {
-      const res = await getMeasurements(order.customer_id);
+      const res = await getMeasurements(order.customer_id, order.dress_type);
       const list = Array.isArray(res.data) ? res.data : [];
       invoiceMeasurements = list.length > 0 ? list[0] : null;
     } catch (_) {
@@ -549,11 +550,11 @@ export default function Orders() {
       doc.text("Measurements", margin, y);
       y += 18;
       doc.setFontSize(10);
-      const measurements =
+      const measurementDetails =
         invoiceMeasurements.measurements || invoiceMeasurements;
-      Object.entries(measurements).forEach(([key, value]) => {
-        if (key === "created_at" || key === "customer_id") return;
-        doc.text(`${key.replace(/_/g, " ")}: ${value}`, margin, y);
+      const measurements = measurementDetails.measurements || measurementDetails;
+      getOrderedMeasurementEntries(measurements, order.dress_type).forEach(([key, value]) => {
+        doc.text(`${key.replace(/_/g, " ")}: ${cleanPrintMeasurementValue(value)}`, margin, y);
         y += 14;
       });
       y += 8;

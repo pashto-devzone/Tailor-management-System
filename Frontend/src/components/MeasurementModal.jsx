@@ -11,7 +11,7 @@ const collarTypes = ["گول کالر", "سیدھا کالر", "چھوٹا کا�
 const collarSizes = ["1.25 انچ", "1.5 انچ", "1.75 انچ", "2 انچ", "2.25 انچ", "2.5 انچ", "2.75 انچ", "3 انچ"];
 const bainTypes = ["گول بین", "سیدھا بین"];
 
-const bainSizes = ["0.5 انچ", "0.75 انچ", "0.90 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
+const bainSizes = ["0.5 انچ", "0.60 انچ", "0.75 انچ", "0.90 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
 const garmentDisplayLabels = {
   "shalwar kameez": "شلوار قمیض",
   sherwani: "شیروانی",
@@ -26,16 +26,17 @@ const optionDisplayLabels = {
   "Double CTC": "ڈبل سی ٹی سی",
   "ڈبل CTC": "ڈبل سی ٹی سی",
   "D کف": "ڈی کف",
+  "Cut Cuff": "کٹ کف",
 };
 const getOptionDisplayLabel = (value) => optionDisplayLabels[value] || value;
 
 const damanOptions = ["گول دامن", "سیدھا دامن"];
 const bazuDesigns = ["کنی بازو", "گول بازو", "کف"];
 const bazuSizes = ["5 انچ", "5.5 انچ", "5.75 انچ", "6 انچ", "6.25 انچ", "6.5 انچ", "7 انچ"];
-const cuffTypes = ["عام کف", "سیدھا کف", "گول کف", "D کف"];
+const cuffTypes = ["عام کف", "سیدھا کف", "گول کف", "D کف", "Cut Cuff"];
 const cuffSizes = ["8 انچ", "8.25 انچ", "8.5 انچ", "8.75 انچ", "9 انچ", "9.25 انچ", "9.5 انچ", "9.75 انچ", "10 انچ", "10.25 انچ", "10.50 انچ"];
 const cuffMotaiOptions = ["2.5 انچ", "3 انچ"];
-const pataiOptions = ["0.5 انچ", "0.75 انچ", "0.90 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
+const pataiOptions = ["0.5 انچ", "0.60 انچ", "0.75 انچ", "0.90 انچ", "1 انچ", "1.1 انچ", "1.25 انچ", "1.5 انچ"];
 const bukramOptions = ["سنگل بکرم", "ڈبل بکرم"];
 const silaiOptions = [
   "سادہ سلائی",

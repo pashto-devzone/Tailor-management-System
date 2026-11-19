@@ -1,6 +1,12 @@
 ﻿"use strict";
 const db = require("../config/db");
 const { encrypt, decrypt, mask } = require("../helpers/encryption");
+const isMissingPersonalDbSchemaError = (error) =>
+  ["42P01", "42703"].includes(error?.code) ||
+  /no such (?:table|column)|(?:table|column) .+ does not exist/i.test(error?.message || "");
+
+exports.isMissingPersonalDbSchemaError = isMissingPersonalDbSchemaError;
+
 exports.getConfigByUserId = async (userId) => {
   const row = await db.prepare(
     `SELECT id, user_id, connection_host, connection_port, connection_database, connection_username,
@@ -53,8 +59,32 @@ exports.getPublicConfigByUserId = async (userId) => {
   };
 };
 exports.hasPersonalDb = async (userId) => {
-  const row = await db.prepare("SELECT has_personal_db FROM users WHERE id = ? LIMIT 1").get(userId);
-  return Boolean(row && row.has_personal_db);
+  try {
+    const user = await db.prepare(
+      "SELECT has_personal_db, personal_store_id FROM users WHERE id = ? LIMIT 1",
+    ).get(userId);
+    if (!user || !(user.has_personal_db === true || user.has_personal_db === 1)) return false;
+
+    const config = await db.prepare(
+      `SELECT connection_host, connection_port, connection_database, connection_username,
+              encrypted_password, status, schema_ok
+       FROM user_supabase_configs WHERE user_id = ? LIMIT 1`,
+    ).get(userId);
+    return Boolean(
+      config &&
+      config.status === "verified" &&
+      (config.schema_ok === true || config.schema_ok === 1) &&
+      config.connection_host &&
+      config.connection_port &&
+      config.connection_database &&
+      config.connection_username &&
+      config.encrypted_password,
+    );
+  } catch (error) {
+    if (!isMissingPersonalDbSchemaError(error)) throw error;
+    console.warn("[personal-db] migration 004/005 schema is unavailable; using the central database.");
+    return false;
+  }
 };
 exports.upsertConfig = async (values) => {
   const {

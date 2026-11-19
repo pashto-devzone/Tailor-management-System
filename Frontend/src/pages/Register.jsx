@@ -119,12 +119,13 @@ export default function Register() {
     setError("");
     setInfo("");
 
-    const hasConnString = Boolean(connectionString);
-    const hasFields = Boolean(connectionHost && connectionPort && connectionDatabase && connectionUsername && connectionPassword);
-    const hasSupabaseApi = Boolean(projectUrl || anonKey);
-
-    if (!hasConnString && !hasFields && !hasSupabaseApi) {
-      setError("Please enter either database connection details or Supabase Project URL/Anon Key.");
+    const hasConnString = Boolean(connectionString.trim());
+    const hasFields = Boolean(
+      connectionHost.trim() && connectionPort.trim() && connectionDatabase.trim() &&
+      connectionUsername.trim() && connectionPassword
+    );
+    if (!hasConnString && !hasFields) {
+      setError("Please enter either a Connection String or all individual database fields.");
       return;
     }
 
@@ -230,7 +231,7 @@ export default function Register() {
                   style={{ width: "100%", padding: "0.75rem 1rem", borderRadius: 12, border: "1px solid var(--border)", fontFamily: "monospace", fontSize: "0.85rem" }}
                 />
                 <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
-                  Or fill individual fields below. Find this in Supabase Dashboard &rarr; Settings &rarr; Database &rarr; Connection string &rarr; Session Pooler.
+                  Supabase &rarr; Connect &rarr; Session pooler &rarr; copy the URI and replace [YOUR-PASSWORD]. Or fill individual fields below.
                 </p>
               </label>
 
@@ -247,12 +248,11 @@ export default function Register() {
               </label>
 
               <label style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Anon Key (public)</span>
+                <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Anon Key (public) <span style={{ fontWeight: 400, color: "var(--muted)" }}>(optional)</span></span>
                 <input
                   type="text"
                   value={anonKey}
                   onChange={(e) => setAnonKey(e.target.value)}
-                  required
                   placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
                   dir="auto"
                   autoComplete="off"
@@ -270,6 +270,9 @@ export default function Register() {
               <button type="submit" className="button primary" disabled={loading} style={{ marginTop: "0.5rem" }}>
                 {loading ? "Creating account..." : "Connect & Complete Registration"}
               </button>
+              <p style={{ margin: 0, fontSize: "0.8rem", color: "var(--muted)" }}>
+                Your database password is stored encrypted on our server.
+              </p>
             </form>
 
             <div style={{ marginTop: "1.5rem", borderTop: "1px solid var(--border)", paddingTop: "1rem", display: "flex", justifyContent: "space-between", alignItems: "center" }}>

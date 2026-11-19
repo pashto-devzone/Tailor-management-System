@@ -90,8 +90,8 @@ exports.register = async (req, res) => {
         projectUrl: normalized.projectUrl,
         projectName: normalized.projectName,
         anonKey: normalized.anonKey,
-        status: "verified",
-        schemaOk: true,
+        status: "pending",
+        schemaOk: false,
       });
 
       // Initialize store in the user's personal database
@@ -102,10 +102,13 @@ exports.register = async (req, res) => {
         fullConfig || supabaseConfig
       );
       personalStoreId = storeResult.store.id;
+      await userSupabaseConfigModel.updateStatus(userId, "verified", null, true, true);
+      supabaseConfig = await userSupabaseConfigModel.getPublicConfigByUserId(userId);
     } catch (err) {
       // Do not fail registration if personal store initialization fails.
       // The user can configure it later from Settings.
       console.error("[register] Personal store initialization failed:", err.message);
+      try { await userSupabaseConfigModel.updateStatus(userId, "error", err.message, true, false); } catch (_) {}
     }
   } else if (projectUrl && anonKey) {
     // Legacy anon-key-only config (no Session Pooler credentials)

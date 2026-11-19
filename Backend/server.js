@@ -88,7 +88,7 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Tailor Shop Management API is running",
-    data: { version: "1.6.3" },
+    data: { version: "1.6.4" },
   });
 });
 
@@ -166,7 +166,9 @@ app.use((err, req, res, next) => {
   );
   if (!isProduction && err.stack) console.error(err.stack);
 
-  const safeMessage = isProduction && statusCode >= 500
+  const safeMessage = err.publicMessage
+    ? message
+    : isProduction && statusCode >= 500
     ? "Internal server error"
     : message;
 

@@ -77,17 +77,37 @@ export const handleApiError = (error) => {
   }
 };
 
-api.interceptors.response.use(
-  (response) => response,
-  (error) => {
-    const friendlyMessage = handleApiError(error);
-    error.friendlyMessage = friendlyMessage;
-    if (error.response?.status === 401) {
-      window.dispatchEvent(new Event("tms-auth-invalid"));
-    }
-    return Promise.reject(error);
-  },
-);
+const hasBearerAuthorization = (config) => {
+  const headers = config?.headers;
+  const authorization =
+    headers?.get?.("Authorization") ??
+    headers?.Authorization ??
+    headers?.authorization;
+  return typeof authorization === "string" && /^\s*Bearer\s+\S+\s*$/i.test(authorization);
+};
+
+export const isConfirmedAuthFailure = (error) =>
+  error?.response?.status === 401 &&
+  error.response.data?.code === "AUTH_INVALID" &&
+  hasBearerAuthorization(error.config);
+
+const handleResponseError = (error) => {
+  const friendlyMessage = handleApiError(error);
+  error.friendlyMessage = friendlyMessage;
+  if (isConfirmedAuthFailure(error)) {
+    const requestUrl = String(error.config?.url || "").split("?")[0];
+    window.dispatchEvent(new CustomEvent("tms-auth-invalid", {
+      detail: {
+        method: String(error.config?.method || "GET").toUpperCase(),
+        url: requestUrl,
+      },
+    }));
+  }
+  return Promise.reject(error);
+};
+
+api.interceptors.response.use((response) => response, handleResponseError);
+apiV1.interceptors.response.use((response) => response, handleResponseError);
 
 export const getCustomers = () => api.get("/customers");
 export const addCustomer = (customer) => api.post("/customers", customer);

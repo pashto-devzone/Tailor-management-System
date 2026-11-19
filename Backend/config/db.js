@@ -121,6 +121,21 @@ function sqliteMigration() {
     .replace(/SELECT setval\([\s\S]*?\);\s*$/i, "");
 }
 
+async function ensurePersonalDbMigrations() {
+  for (const name of ["004_user_supabase_configs.sql", "005_personal_store_id.sql"]) {
+    try {
+      const sql = fs.readFileSync(path.join(__dirname, "..", "migrations", name), "utf8");
+      await cloudPool.query(sql);
+      console.log(`[database] verified ${name}`);
+    } catch (error) {
+      console.warn(
+        `[database] could not apply ${name}; accounts will use the central database until it is fixed:`,
+        error.message,
+      );
+    }
+  }
+}
+
 function rows(result) {
   if (!result || !result.length) return [];
   const [table] = result;
@@ -196,8 +211,8 @@ function prepare(sql) {
 // Existing local databases predate columns added later to 001_initial.sql
 // (CREATE TABLE IF NOT EXISTS never alters an existing table). This guarded,
 // idempotent step keeps the development SQLite database in sync with the
-// canonical schema. Production PostgreSQL applies numbered migrations out of
-// band instead (see DEPLOYMENT.md).
+// canonical schema. Production PostgreSQL uses numbered migrations; startup
+// additionally ensures the personal-database migrations are applied.
 function ensureLocalColumn(dbHandle, table, column, ddlType) {
   try {
     const info = dbHandle.exec(`PRAGMA table_info(${table})`);
@@ -249,6 +264,7 @@ async function initialize() {
     await cloudPool.query("SELECT 1");
     cloudOnline = true;
     console.log("[database] PostgreSQL/Supabase connection established");
+    await ensurePersonalDbMigrations();
     return;
   }
 
@@ -265,6 +281,7 @@ async function initialize() {
       await cloudPool.query("SELECT 1");
       cloudOnline = true;
       console.log("[database] PostgreSQL/Supabase connection established");
+      await ensurePersonalDbMigrations();
       return;
     } catch (error) {
       cloudOnline = false;
@@ -307,61 +324,119 @@ exports.getUserContext = () => {
   return store ? store.userId : null;
 };
 
-exports.getOperationalPool = async () => {
+function publicDatabaseError(message, status, code) {
+  const error = new Error(message);
+  error.status = status;
+  error.code = code;
+  error.publicMessage = true;
+  return error;
+}
+
+async function resolveOperationalPool() {
   const uid = exports.getUserContext();
   if (uid) {
+    let model;
+    let hasPersonalDb;
     try {
-      const model = require("../models/userSupabaseConfigModel");
-      if (await model.hasPersonalDb(uid)) {
-        const config = await model.getConfigByUserId(uid);
-        if (config && config.connection_host && config.encrypted_password) {
-          const personalDb = require("../services/personalDb");
-          const { decrypt } = require("../helpers/encryption");
-          const cfg = {
-            host: config.connection_host,
-            port: config.connection_port,
-            database: config.connection_database,
-            username: config.connection_username,
-            password: decrypt(config.encrypted_password),
-            sslMode: config.ssl_mode || "no-verify",
-          };
-          return personalDb.getPool(cfg, uid);
-        }
-      }
+      model = require("../models/userSupabaseConfigModel");
+      hasPersonalDb = await model.hasPersonalDb(uid);
     } catch (err) {
-      console.warn("[db] personal pool resolution failed:", err.message);
+      console.error("[db] personal database status lookup failed:", err.message);
+      throw publicDatabaseError("Unable to verify your account database configuration. Please try again.", 500, "personal_db_config_error");
+    }
+
+    if (hasPersonalDb) {
+      let config;
+      try {
+        config = await model.getConfigByUserId(uid);
+      } catch (err) {
+        if (model.isMissingPersonalDbSchemaError(err)) {
+          console.warn("[db] personal database schema is unavailable; using the central database.");
+          return { pool: cloudPool, personal: false };
+        }
+        console.error("[db] personal database configuration lookup failed:", err.message);
+        throw publicDatabaseError(
+          "Unable to load your personal database configuration. Please try again.",
+          500,
+          "personal_db_config_error",
+        );
+      }
+      if (!config || !config.connection_host || !config.encrypted_password) {
+        throw publicDatabaseError(
+          "Your personal database configuration is incomplete. Reconnect it in Settings.",
+          503,
+          "personal_db_unavailable",
+        );
+      }
+      try {
+        const personalDb = require("../services/personalDb");
+        const { decrypt } = require("../helpers/encryption");
+        const cfg = {
+          host: config.connection_host,
+          port: config.connection_port,
+          database: config.connection_database,
+          username: config.connection_username,
+          password: decrypt(config.encrypted_password),
+          sslMode: config.ssl_mode || "no-verify",
+        };
+        return { pool: personalDb.getPool(cfg, uid), personal: true };
+      } catch (err) {
+        console.warn("[db] personal pool resolution failed:", err.message);
+        const decryptionFailed = /ENCRYPTION_KEY|decrypt|encrypted credential/i.test(err.message || "");
+        throw publicDatabaseError(
+          decryptionFailed
+            ? "Your personal database configuration could not be decrypted. Verify ENCRYPTION_KEY or reconnect it in Settings."
+            : "Your Supabase database is unreachable. Check it is not paused, then try again.",
+          503,
+          "personal_db_unavailable",
+        );
+      }
     }
   }
-  if (cloudPool) return cloudPool;
-  return null;
-};
+  return { pool: cloudPool, personal: false };
+}
+
+exports.getOperationalPool = async () => (await resolveOperationalPool()).pool;
 
 function operationalPrepare(sql) {
   let index = 0;
   const statement = sql.replace(/\?/g, () => `$${++index}`);
   async function resolve() {
-    const pool = await exports.getOperationalPool();
-    if (pool) return { type: "pg", pool };
+    const operational = await resolveOperationalPool();
+    if (operational.pool) return { type: "pg", pool: operational.pool, personal: operational.personal };
     if (localDb) return { type: "local" };
     throw new Error("Operational database is unavailable");
+  }
+  async function query(pool, personal, params) {
+    try {
+      return await pool.query(statement, params);
+    } catch (err) {
+      if (!personal) throw err;
+      console.warn("[db] personal database request failed");
+      throw publicDatabaseError(
+        "Your Supabase database is unreachable. Check it is not paused, then try again.",
+        503,
+        "personal_db_unavailable",
+      );
+    }
   }
   return {
     async run(...params) {
       const r = await resolve();
       if (r.type === "local") return localPrepare(sql).run(...params);
-      const result = await r.pool.query(statement, params);
+      const result = await query(r.pool, r.personal, params);
       return { changes: result.rowCount, lastInsertRowid: result.rows[0]?.id == null ? undefined : Number(result.rows[0].id) };
     },
     async get(...params) {
       const r = await resolve();
       if (r.type === "local") return localPrepare(sql).get(...params);
-      const result = await r.pool.query(statement, params);
+      const result = await query(r.pool, r.personal, params);
       return result.rows[0] || null;
     },
     async all(...params) {
       const r = await resolve();
       if (r.type === "local") return localPrepare(sql).all(...params);
-      const result = await r.pool.query(statement, params);
+      const result = await query(r.pool, r.personal, params);
       return result.rows;
     },
   };

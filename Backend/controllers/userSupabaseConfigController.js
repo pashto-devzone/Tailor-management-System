@@ -32,12 +32,19 @@ function normalizeConnectionInput(body) {
 exports.getConfig = async (req, res) => {
   const userId = req.user.id;
   try {
-    const config = await getPublicConfigByUserId(userId);
     const hasPersonal = await hasPersonalDb(userId);
+    if (!hasPersonal) {
+      return res.json({
+        has_personal_db: false,
+        config: null,
+        using_central_db: true,
+      });
+    }
+    const config = await getPublicConfigByUserId(userId);
     return res.json({
-      has_personal_db: hasPersonal,
+      has_personal_db: true,
       config: config || null,
-      using_central_db: !hasPersonal,
+      using_central_db: false,
     });
   } catch (err) {
     return res.status(500).json({ message: "Unable to load Supabase configuration." });
@@ -66,7 +73,7 @@ exports.saveConfig = async (req, res) => {
       });
     }
 
-    const config = await upsertConfig({
+    await upsertConfig({
       userId,
       host: normalized.host,
       port: normalized.port,
@@ -77,26 +84,24 @@ exports.saveConfig = async (req, res) => {
       projectUrl: normalized.projectUrl,
       projectName: normalized.projectName,
       anonKey: normalized.anonKey,
-      status: "verified",
-      schemaOk: true,
+      status: "pending",
+      schemaOk: false,
     });
-    await updateStatus(userId, "verified", null, true, true);
 
     const fullConfig = await getConfigByUserId(userId);
 
-// Initialize store in the user's personal database
-let personalStoreId = null;
-try {
-  const userRow = await db.prepare("SELECT id, name, email FROM users WHERE id = ? LIMIT 1").get(userId);
-  const storeResult = await initializePersonalStore(userId, { name: userRow.name, email: userRow.email }, fullConfig);
-  personalStoreId = storeResult.store.id;
-} catch (err) {
-  console.error("[saveConfig] personal store initialization failed:", err.message);
-}
+    // Activate personal routing only after the user's own database has a store.
+    const userRow = await db.prepare("SELECT id, name, email FROM users WHERE id = ? LIMIT 1").get(userId);
+    const storeResult = await initializePersonalStore(userId, { name: userRow.name, email: userRow.email }, fullConfig);
+    const personalStoreId = storeResult.store.id;
+    await updateStatus(userId, "verified", null, true, true);
+    const config = await getPublicConfigByUserId(userId);
 
 return res.json({
   message: "Supabase project connected and verified.",
   config,
+  has_personal_db: true,
+  using_central_db: false,
   personal_store_id: personalStoreId,
 });
   } catch (err) {

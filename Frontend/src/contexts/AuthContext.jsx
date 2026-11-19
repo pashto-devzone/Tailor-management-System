@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState } from "react";
-import { login as apiLogin, register as apiRegister, logout as apiLogout, getMe, setAuthToken } from "../services/api";
+import { login as apiLogin, register as apiRegister, logout as apiLogout, getMe, isConfirmedAuthFailure, setAuthToken } from "../services/api";
 
 const AuthContext = createContext(null);
 const AUTH_STORAGE_KEY = "tms_auth";
@@ -10,7 +10,11 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const handleInvalidSession = async () => {
+    const handleInvalidSession = async (event) => {
+      const request = event.detail || {};
+      console.warn(
+        `[auth] logging out after confirmed authentication failure: ${request.method || "GET"} ${request.url || "(unknown request)"}`,
+      );
       setAuthToken(null);
       localStorage.removeItem(AUTH_STORAGE_KEY);
       const secureAuth = electronAuth();
@@ -72,7 +76,7 @@ export function AuthProvider({ children }) {
           setUser(null);
         }
       } catch (error) {
-        if (error.response) {
+        if (isConfirmedAuthFailure(error)) {
           if (secureAuth) await secureAuth.clear();
           else localStorage.removeItem(AUTH_STORAGE_KEY);
           setAuthToken(null);

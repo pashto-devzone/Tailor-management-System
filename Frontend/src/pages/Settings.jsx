@@ -87,6 +87,17 @@ export default function Settings() {
   const [newProjectName, setNewProjectName] = useState("");
   const [newAnonKey, setNewAnonKey] = useState("");
   const [testingConnection, setTestingConnection] = useState(false);
+  const [supabaseEditUnlocked, setSupabaseEditUnlocked] = useState(false);
+
+  const toggleSupabaseEditing = () => {
+    if (supabaseEditUnlocked) {
+      setSupabaseEditUnlocked(false);
+      return;
+    }
+    if (window.confirm("Unlock Supabase database settings for editing?")) {
+      setSupabaseEditUnlocked(true);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -110,6 +121,8 @@ export default function Settings() {
       setSupabaseError("Provide a connection string or host, port, database, username and password.");
       return;
     }
+    const warning = "After connecting your own Supabase database, the app will use that NEW empty database for customers, orders and measurements. Your existing data stays safe in the central database and is not deleted or copied. You can disconnect later to go back to it.";
+    if (!window.confirm(warning)) return;
     setSupabaseLoading(true);
     try {
       const res = await saveUserSupabaseConfig({
@@ -125,10 +138,12 @@ export default function Settings() {
         anonKey: newAnonKey || undefined,
       });
       setSupabaseMessage(res.data.message || "Supabase configuration saved.");
-      setSupabaseConfig(res.data.config || null);
+      setSupabaseConfig({ has_personal_db: true, using_central_db: false, config: res.data.config || null });
       setNewProjectUrl("");
       setNewProjectName("");
       setNewAnonKey("");
+      setSupabaseEditUnlocked(false);
+      window.location.reload();
     } catch (err) {
       setSupabaseError(err?.friendlyMessage || "Failed to save Supabase configuration.");
     } finally {
@@ -183,7 +198,8 @@ export default function Settings() {
     try {
       const res = await disconnectUserSupabase();
       setSupabaseMessage(res.data.message || "Disconnected.");
-      setSupabaseConfig(null);
+      setSupabaseConfig({ has_personal_db: false, using_central_db: true, config: null });
+      window.location.reload();
     } catch (err) {
       setSupabaseError(err?.friendlyMessage || "Failed to disconnect.");
     } finally {
@@ -576,7 +592,7 @@ export default function Settings() {
           </div>
           <div className={supabaseOpen ? "collapsible-body" : "collapsible-body collapsed"} style={{ padding: "1rem" }}>
             <p style={{ fontSize: "0.9rem", color: "var(--muted)", marginBottom: 12 }}>
-              {supabaseConfig && supabaseConfig.has_personal_db ? "Your account uses your own Supabase project for business data." : "Your account uses the central TMS Supabase database."}
+              {supabaseConfig && supabaseConfig.has_personal_db ? "Your account uses your own Supabase project for business data." : "Your account uses the central TMS database."}
             </p>
 
             {supabaseConfig?.config && (
@@ -623,12 +639,16 @@ export default function Settings() {
 
             {!supabaseConfig?.has_personal_db && (
               <form onSubmit={handleSaveSupabaseConfig} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <button type="button" className="button secondary" onClick={toggleSupabaseEditing} style={{ alignSelf: "flex-start" }}>
+                  {supabaseEditUnlocked ? "Lock Editing" : "Unlock to edit"}
+                </button>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Connection String (Session Pooler URI)</span>
                   <input
                     type="text"
                     value={connString}
                     onChange={(e) => setConnString(e.target.value)}
+                    readOnly={!supabaseEditUnlocked}
                     placeholder="postgresql://user:password@host:5432/postgres"
                     style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", fontFamily: "monospace", fontSize: "0.85rem" }}
                   />
@@ -636,30 +656,30 @@ export default function Settings() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Host</span>
-                    <input type="text" value={connHost} onChange={(e) => setConnHost(e.target.value)} placeholder="aws-...pooler.supabase.com" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                    <input type="text" value={connHost} onChange={(e) => setConnHost(e.target.value)} readOnly={!supabaseEditUnlocked} placeholder="aws-...pooler.supabase.com" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
                   </label>
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Port</span>
-                    <input type="text" value={connPort} onChange={(e) => setConnPort(e.target.value)} placeholder="5432" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                    <input type="text" value={connPort} onChange={(e) => setConnPort(e.target.value)} readOnly={!supabaseEditUnlocked} placeholder="5432" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
                   </label>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Database</span>
-                    <input type="text" value={connDatabase} onChange={(e) => setConnDatabase(e.target.value)} placeholder="postgres" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                    <input type="text" value={connDatabase} onChange={(e) => setConnDatabase(e.target.value)} readOnly={!supabaseEditUnlocked} placeholder="postgres" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
                   </label>
                   <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                     <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Username</span>
-                    <input type="text" value={connUsername} onChange={(e) => setConnUsername(e.target.value)} placeholder="postgres.xxx" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                    <input type="text" value={connUsername} onChange={(e) => setConnUsername(e.target.value)} readOnly={!supabaseEditUnlocked} placeholder="postgres.xxx" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
                   </label>
                 </div>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Password</span>
-                  <input type="password" value={connPassword} onChange={(e) => setConnPassword(e.target.value)} placeholder="••••••••" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                  <input type="password" value={connPassword} onChange={(e) => setConnPassword(e.target.value)} readOnly={!supabaseEditUnlocked} placeholder="••••••••" autoComplete="new-password" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>SSL Mode</span>
-                  <select value={sslMode} onChange={(e) => setSslMode(e.target.value)} style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }}>
+                  <select value={sslMode} onChange={(e) => setSslMode(e.target.value)} disabled={!supabaseEditUnlocked} style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }}>
                     <option value="no-verify">Require SSL (no verify)</option>
                     <option value="require">Require SSL (verify)</option>
                     <option value="disable">Disable SSL</option>
@@ -667,19 +687,19 @@ export default function Settings() {
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Project URL (optional)</span>
-                  <input type="url" value={newProjectUrl} onChange={(e) => setNewProjectUrl(e.target.value)} placeholder="https://your-project.supabase.co" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
+                  <input type="url" value={newProjectUrl} onChange={(e) => setNewProjectUrl(e.target.value)} readOnly={!supabaseEditUnlocked} placeholder="https://your-project.supabase.co" style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)" }} />
                 </label>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   <span style={{ fontWeight: 600, fontSize: "0.9rem" }}>Anon Key (optional)</span>
-                  <input type="text" value={newAnonKey} onChange={(e) => setNewAnonKey(e.target.value)} placeholder="eyJ..." style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", fontFamily: "monospace", fontSize: "0.85rem" }} />
+                  <input type="text" value={newAnonKey} onChange={(e) => setNewAnonKey(e.target.value)} readOnly={!supabaseEditUnlocked} placeholder="eyJ..." style={{ padding: "0.5rem 0.75rem", borderRadius: 6, border: "1px solid var(--border)", fontFamily: "monospace", fontSize: "0.85rem" }} />
                 </label>
                 {supabaseError && <p className="message error" style={{ margin: 0, fontSize: "0.85rem" }}>{supabaseError}</p>}
                 {supabaseMessage && <p className="message success" style={{ margin: 0, fontSize: "0.85rem" }}>{supabaseMessage}</p>}
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button type="button" className="button secondary" onClick={handleTestSupabaseConnection} disabled={testingConnection || supabaseLoading}>
+                  <button type="button" className="button secondary" onClick={handleTestSupabaseConnection} disabled={!supabaseEditUnlocked || testingConnection || supabaseLoading}>
                     {testingConnection ? "Testing..." : "Test Connection"}
                   </button>
-                  <button type="submit" className="button primary" disabled={supabaseLoading}>
+                  <button type="submit" className="button primary" disabled={!supabaseEditUnlocked || supabaseLoading}>
                     {supabaseLoading ? "Saving..." : "Connect Project"}
                   </button>
                 </div>

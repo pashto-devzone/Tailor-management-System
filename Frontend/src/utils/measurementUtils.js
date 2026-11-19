@@ -107,11 +107,32 @@ const repairMojibake = (value) => {
   }
 };
 
-const repairMojibakeDeep = (value) => {
-  if (typeof value === "string") return repairMojibake(value);
-  if (Array.isArray(value)) return value.map(repairMojibakeDeep);
+const freeTextFields = new Set([
+  "comment",
+  "comments",
+  "cuff_extra",
+  "cuff_motai_comment",
+  "design_comment",
+  "extra",
+  "extra_style_design",
+  "front_details",
+  "measurement_notes",
+  "name",
+  "notes",
+  "side_details",
+  "whatsapp_name",
+  "whatsapp_number",
+]);
+
+const repairMojibakeDeep = (value, key, preserveText = false) => {
+  if (typeof value === "string") return preserveText || freeTextFields.has(key) ? value : repairMojibake(value);
+  if (Array.isArray(value)) return value.map((item) => repairMojibakeDeep(item, key, preserveText));
   if (!value || typeof value !== "object") return value;
-  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, repairMojibakeDeep(item)]));
+  const preserveChildren = preserveText || key === "additional_comments";
+  return Object.fromEntries(Object.entries(value).map(([childKey, item]) => [
+    childKey,
+    repairMojibakeDeep(item, childKey, preserveChildren),
+  ]));
 };
 
 const clearInvalidDependentValues = (details) => {
@@ -452,10 +473,9 @@ export const getOrderedMeasurementEntries = (values, dressType) => {
   const normalizedType = String(dressType || "shalwar kameez").toLowerCase().replace(/\s+/g, "");
   const garment = normalizedType === "waistcoat" ? "waistcoat" : normalizedType;
   const order = MEASUREMENT_FIELD_ORDER[garment] || MEASUREMENT_FIELD_ORDER.shalwarkameez;
-  const known = new Set(order);
-  const entries = order.filter((key) => Object.prototype.hasOwnProperty.call(values || {}, key)).map((key) => [key, values[key]]);
-  const extras = Object.keys(values || {}).filter((key) => !known.has(key));
-  return [...entries, ...extras.map((key) => [key, values[key]])];
+  return order
+    .filter((key) => Object.prototype.hasOwnProperty.call(values || {}, key))
+    .map((key) => [key, values[key]]);
 };
 
 export const measurementListFields = [
@@ -474,7 +494,9 @@ export const measurementListFields = [
 export const getMeasurementLabel = (key) => repairMojibake(measurementLabelMap[key] || key);
 
 export const cleanPrintMeasurementValue = (value) =>
-  String(value ?? "").replace(/\s*(?:انچ|inch(?:es)?)\s*/giu, "").trim();
+  String(value ?? "")
+    .replace(/([\d/۰-۹٠-٩])\s*(?:انچ|in(?:ches?)?)(?=$|[\s.,;:/)])/giu, "$1")
+    .trim();
 
 export const formatMeasurementList = (details) =>
   measurementListFields.map((key) => ({ label: measurementLabelMap[key], value: details.measurements[key] || "-" }));
@@ -511,6 +533,7 @@ const farmaishDisplayLabels = {
   "ÚˆØ¨Ù„ CTC": "ÚˆØ¨Ù„ Ø³ÛŒ Ù¹ÛŒ Ø³ÛŒ",
   "Double CTC": "ÚˆØ¨Ù„ Ø³ÛŒ Ù¹ÛŒ Ø³ÛŒ",
   "D Ú©Ù": "ÚˆÛŒ Ú©Ù",
+  "Cut Cuff": "کٹ کف",
   "Gol Collar": "Ú¯ÙˆÙ„ Ú©Ø§Ù„Ø±",
   "Seedha Collar": "Ø³ÛŒØ¯Ú¾Ø§ Ú©Ø§Ù„Ø±",
   "Chota Collar": "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø§Ù„Ø±",
@@ -528,6 +551,10 @@ export const getFarmaishRows = (details) => {
     const v = value === undefined || value === null ? "" : String(value).trim();
     if (!v) return;
     rows.push({ label: repairMojibake(label), value: repairMojibake(cleanPrintMeasurementValue(v)) });
+  };
+  const pushText = (label, value) => {
+    if (!safe(value)) return;
+    rows.push({ label: repairMojibake(label), value: String(value) });
   };
 
   const d = details || {};
@@ -575,8 +602,10 @@ export const getFarmaishRows = (details) => {
     if (!galaValues.includes(displayValue)) galaValues.push(displayValue);
   };
   appendGalaValue(d.gala);
-  appendGalaValue(d.additional_comments?.gala);
-  if (galaValues.length) push("گلا", galaValues.join(" - "));
+  const galaComment = d.additional_comments?.gala;
+  if (galaValues.length || safe(galaComment)) {
+    pushText("گلا", [galaValues.join(" - "), safe(galaComment) ? String(galaComment) : ""].filter(Boolean).join(" - "));
+  }
 
   // Ø¨Ø§Ø²Ùˆ
   const baazooDesign = normalizedValue(d.baazoo?.design);
@@ -591,8 +620,8 @@ export const getFarmaishRows = (details) => {
         safe(d.baazoo.cuff_motai) ? `موٹائی: ${d.baazoo.cuff_motai}` : "",
       ].filter(Boolean);
       if (parts.length) push("بازو", parts.map(getFarmaishDisplayLabel).join(" - "));
-      if (safe(d.baazoo.cuff_extra)) push("Ø§Ø¶Ø§ÙÛŒ Ú©Ù Ø³Ø§Ø¦Ø²", d.baazoo.cuff_extra);
-      if (safe(d.baazoo.cuff_motai_comment)) push("Ú©Ù Ù…ÙˆÙ¹Ø§Ø¦ÛŒ Ú©Û’ ØªØ¨ØµØ±Û’", d.baazoo.cuff_motai_comment);
+      if (safe(d.baazoo.cuff_extra)) pushText("Ø§Ø¶Ø§ÙÛŒ Ú©Ù Ø³Ø§Ø¦Ø²", d.baazoo.cuff_extra);
+      if (safe(d.baazoo.cuff_motai_comment)) pushText("Ú©Ù Ù…ÙˆÙ¹Ø§Ø¦ÛŒ Ú©Û’ ØªØ¨ØµØ±Û’", d.baazoo.cuff_motai_comment);
     } else {
       push("Ø¨Ø§Ø²Ùˆ", baazooDesign);
     }
@@ -608,24 +637,24 @@ export const getFarmaishRows = (details) => {
   const pataiDesign = safe(d.patai?.design) ? d.patai.design : "";
   const pataiDesignComment = safe(d.patai?.design_comment) ? d.patai.design_comment : "";
   if (pataiDesign && pataiDesignComment) {
-    push("Ù¾Ù¹Ø§Ø¦ÛŒ ÚˆÛŒØ²Ø§Ø¦Ù†", `${pataiDesign} (${pataiDesignComment})`);
+    pushText("Ù¾Ù¹Ø§Ø¦ÛŒ ÚˆÛŒØ²Ø§Ø¦Ù†", `${pataiDesign} (${pataiDesignComment})`);
   } else if (pataiDesign) {
     push("Ù¾Ù¹Ø§Ø¦ÛŒ ÚˆÛŒØ²Ø§Ø¦Ù†", pataiDesign);
   } else if (pataiDesignComment) {
-    push("Ù¾Ù¹Ø§Ø¦ÛŒ ÚˆÛŒØ²Ø§Ø¦Ù†", pataiDesignComment);
+    pushText("Ù¾Ù¹Ø§Ø¦ÛŒ ÚˆÛŒØ²Ø§Ø¦Ù†", pataiDesignComment);
   }
 
   // Ø³Ø§Ù…Ù†Û’ Ù¾Ø§Ú©Ù¹
   if (d.pocket?.front || d.pocket?.side) {
     if (d.pocket?.front) {
       const frontDetails = d.pocket.front_details ? ` (${d.pocket.front_details})` : "";
-      push("\u0633\u0627\u0645\u0646\u06d2 \u067e\u0627\u06a9\u0679", `\u06c1\u0627\u06ba${frontDetails}`);
+      pushText("\u0633\u0627\u0645\u0646\u06d2 \u067e\u0627\u06a9\u0679", `\u06c1\u0627\u06ba${frontDetails}`);
     }
     if (d.pocket?.side) {
       const sideCount = d.pocket.side_count ? `${d.pocket.side_count} \u0633\u0627\u0626\u06cc\u0688 \u067e\u0627\u06a9\u0679` : "";
       const sideDetails = d.pocket.side_details ? d.pocket.side_details : "";
       const suffix = [sideCount, sideDetails].filter(Boolean).join("\u060c ");
-      push("\u0633\u0627\u0626\u06cc\u0688 \u067e\u0627\u06a9\u0679", suffix ? `\u06c1\u0627\u06ba (${suffix})` : "\u06c1\u0627\u06ba");
+      pushText("\u0633\u0627\u0626\u06cc\u0688 \u067e\u0627\u06a9\u0679", suffix ? `\u06c1\u0627\u06ba (${suffix})` : "\u06c1\u0627\u06ba");
     }
   }
 
@@ -641,14 +670,14 @@ export const getFarmaishRows = (details) => {
   if (safe(d.button_design?.type)) {
     const base = d.button_design.type;
     const comment = safe(d.button_design?.comment) ? d.button_design.comment : "";
-    push("Ø¨Ù¹Ù† ÚˆÛŒØ²Ø§Ø¦Ù†", comment ? `${base} (${comment})` : base);
+    pushText("Ø¨Ù¹Ù† ÚˆÛŒØ²Ø§Ø¦Ù†", comment ? `${base} (${comment})` : base);
   }
 
   // Ú©Ø§Ø¬ ÚˆÛŒØ²Ø§Ø¦Ù†
   if (safe(d.kaaj_design?.type)) {
     const base = d.kaaj_design.type;
     const comment = safe(d.kaaj_design?.comment) ? d.kaaj_design.comment : "";
-    push("Ú©Ø§Ø¬ ÚˆÛŒØ²Ø§Ø¦Ù†", comment ? `${base} (${comment})` : base);
+    pushText("Ú©Ø§Ø¬ ÚˆÛŒØ²Ø§Ø¦Ù†", comment ? `${base} (${comment})` : base);
   }
 
   // Ø¨Ú©Ø±Ù…
@@ -663,33 +692,33 @@ export const getFarmaishRows = (details) => {
     push("Ù…Ù†ÚˆØ§", d.munda.value);
   }
   if (safe(d.munda?.comment)) {
-    push("Ù…Ù†ÚˆØ§ Ú©Ù…Ù†Ù¹Ø³", d.munda.comment);
+    pushText("Ù…Ù†ÚˆØ§ Ú©Ù…Ù†Ù¹Ø³", d.munda.comment);
   }
 
   if (safe(d.baazoo?.extra)) {
-    push("Ø¨Ø§Ø²Ùˆ Ø§Ø¶Ø§ÙÛŒ Ø³Ø§Ø¦Ø²", d.baazoo.extra);
+    pushText("Ø¨Ø§Ø²Ùˆ Ø§Ø¶Ø§ÙÛŒ Ø³Ø§Ø¦Ø²", d.baazoo.extra);
   }
 
   // Ø³Ù„Ø§Ø¦ÛŒ
   if (safe(d.silai?.type)) {
-    let line = d.silai.type;
+    let line = getFarmaishDisplayLabel(d.silai.type);
     if (normalizedValue(d.silai.type) === "واٹس ایپ") {
       const parts = [];
-      if (safe(d.silai.whatsapp_number)) parts.push(`Ù†Ù…Ø¨Ø±: ${d.silai.whatsapp_number}`);
-      if (safe(d.silai.whatsapp_name)) parts.push(`Ù†Ø§Ù…: ${d.silai.whatsapp_name}`);
-      if (safe(d.silai.extra_style_design)) parts.push(`Ø§Ø¶Ø§ÙÛŒ: ${d.silai.extra_style_design}`);
+      if (safe(d.silai.whatsapp_number)) parts.push(`Ù†Ù…Ø¨Ø±: ${String(d.silai.whatsapp_number)}`);
+      if (safe(d.silai.whatsapp_name)) parts.push(`Ù†Ø§Ù…: ${String(d.silai.whatsapp_name)}`);
+      if (safe(d.silai.extra_style_design)) parts.push(`Ø§Ø¶Ø§ÙÛŒ: ${String(d.silai.extra_style_design)}`);
       if (parts.length) line = `${line} (${parts.join(" ØŒ ")})`;
     }
-    push("Ø³Ù„Ø§Ø¦ÛŒ", getFarmaishDisplayLabel(line));
+    pushText("Ø³Ù„Ø§Ø¦ÛŒ", line);
   }
   if (safe(d.silai?.extra_style_design) && normalizedValue(d.silai.type) !== "واٹس ایپ") {
-    push("Ø§Ø¶Ø§ÙÛŒ Ø§Ø³Ù¹Ø§Ø¦Ù„ / ÚˆÛŒØ²Ø§Ø¦Ù†", d.silai.extra_style_design);
+    pushText("Ø§Ø¶Ø§ÙÛŒ Ø§Ø³Ù¹Ø§Ø¦Ù„ / ÚˆÛŒØ²Ø§Ø¦Ù†", d.silai.extra_style_design);
   }
 
   // Ø´Ù„ÙˆØ§Ø±
   if (safe(d.shalwar?.style)) {
     const shalwarComment = safe(d.shalwar?.comment) ? ` (${d.shalwar.comment})` : "";
-    push("Ø´Ù„ÙˆØ§Ø±", d.shalwar.style + shalwarComment);
+    pushText("Ø´Ù„ÙˆØ§Ø±", d.shalwar.style + shalwarComment);
   }
 
   // Ø¯Ø§Ù…Ù†
@@ -702,9 +731,9 @@ export const getFarmaishRows = (details) => {
     const repairedLabels = labels.map(repairMojibake);
     const row = rows.find((item) => repairedLabels.includes(item.label));
     if (row) {
-      row.value = `${row.value} (${repairMojibake(comment)})`;
+      row.value = `${row.value} (${String(comment)})`;
     } else {
-      push(repairMojibake(fallbackLabel), comment);
+      pushText(repairMojibake(fallbackLabel), comment);
     }
   };
   appendComment(d.additional_comments?.daman, ["Ø¯Ø§Ù…Ù†", "دامن"], "Ø¯Ø§Ù…Ù†");

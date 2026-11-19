@@ -22,6 +22,8 @@ const LENGTH_KEYS = [
   "marginLeft",
   "marginRight",
   "innerPadding",
+  "borderWidth",
+  "rowSpacing",
 ];
 
 const round4 = (n) => Math.round(n * 10000) / 10000;
@@ -30,6 +32,7 @@ const canonicalFromRaw = (raw) => {
   const unit = raw.unit === "in" ? "in" : "mm";
   const out = { ...raw };
   for (const key of LENGTH_KEYS) {
+    if (out[key] === "") continue;
     const n = Number(out[key]);
     if (Number.isFinite(n)) out[key] = unit === "in" ? round4(n * MM_PER_INCH) : round2(n);
   }
@@ -71,7 +74,17 @@ export default function PrintSettingsSection() {
     getSettings()
       .then((res) => {
         if (!mounted) return;
-        const saved = res.data?.printSettings || {};
+        const stored = res.data?.printSettings || {};
+        const saved = { ...DEFAULT_PRINT_SETTINGS, ...stored };
+        if (stored.baseFontSize == null && stored.tableFontSize != null) {
+          saved.baseFontSize = stored.tableFontSize;
+        }
+        if (stored.labelFontSize == null && stored.tableFontSize != null) {
+          saved.labelFontSize = stored.tableFontSize;
+        }
+        if (stored.valueFontSize == null && stored.tableFontSize != null) {
+          saved.valueFontSize = stored.tableFontSize;
+        }
         setRaw(rawFromCanonical({ ...DEFAULT_PRINT_SETTINGS, ...saved }));
       })
       .catch((err) => {
@@ -156,6 +169,20 @@ export default function PrintSettingsSection() {
     </label>
   );
 
+  const numberInput = (key, label, min, max, step = 1) => (
+    <label>
+      {label}
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={raw[key]}
+        onChange={(e) => update({ [key]: e.target.value === "" ? "" : Number(e.target.value) })}
+      />
+    </label>
+  );
+
   return (
     <div className="collapsible-card">
       <div className="collapsible-header" onClick={() => setOpen((prev) => !prev)}>
@@ -218,9 +245,12 @@ export default function PrintSettingsSection() {
               {lengthInput("marginLeft", "Left margin")}
               {lengthInput("marginRight", "Right margin")}
               {lengthInput("innerPadding", "Extra inner padding")}
+              {lengthInput("borderWidth", "Border width")}
+              {lengthInput("rowSpacing", "Row spacing")}
             </div>
 
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {fontInput("baseFontSize", "Base font size")}
               {fontInput("headerFontSize", "Header font size")}
               <label>
                 Header font weight
@@ -235,8 +265,17 @@ export default function PrintSettingsSection() {
                   ))}
                 </select>
               </label>
-              {fontInput("tableFontSize", "Measurement table font size")}
+              {fontInput("labelFontSize", "Measurement label font size")}
+              {fontInput("valueFontSize", "Measurement value font size")}
               {fontInput("farmaishFontSize", "Farmaish / comment font size")}
+              {fontInput("footerFontSize", "Footer font size")}
+            </div>
+
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {numberInput("lineHeightScale", "Line-height scale (%)", 70, 160)}
+              {numberInput("bodyColumnWidth", "Measurements section width (%)", 30, 70, 0.1)}
+              {numberInput("labelColumnWidth", "Measurement label column (%)", 25, 75, 0.1)}
+              {numberInput("metadataColumns", "Header information columns", 1, 6)}
             </div>
 
             {errors.length ? (

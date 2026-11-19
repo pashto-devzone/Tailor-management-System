@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { fork } = require('child_process');
 
 const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require('electron');
@@ -32,6 +33,12 @@ process.on('unhandledRejection', (reason) => {
 
 function isProduction() {
   return app.isPackaged || process.env.NODE_ENV === 'production';
+}
+
+function fontPathToFileUrl(fontPath) {
+  const normalized = path.resolve(fontPath).replace(/\\/g, '/');
+  const withLeadingSlash = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  return `file://${withLeadingSlash}`;
 }
 
 function compareVersions(left, right) {
@@ -561,13 +568,23 @@ const DEFAULT_PRINT_CONFIG = {
   marginLeft: 2.5,
   marginRight: 2.5,
   innerPadding: 0.5,
+  borderWidth: 0.3,
+  rowSpacing: 1.5,
+  bodyColumnWidth: 42,
+  labelColumnWidth: 44,
+  metadataColumns: 3,
+  lineHeightScale: 100,
+  baseFontSize: 12.2,
   headerFontSize: 13.3,
   headerFontWeight: 700,
-  tableFontSize: 12.2,
+  labelFontSize: 12.2,
+  valueFontSize: 12.2,
   farmaishFontSize: 12.2,
+  footerFontSize: 8.5,
 };
 
 const clampNumber = (value, min, max, fallback) => {
+  if (value === undefined || value === null || value === '') return fallback;
   const n = Number(value);
   if (!Number.isFinite(n)) return fallback;
   return Math.min(max, Math.max(min, n));
@@ -586,10 +603,19 @@ function normalizePrintConfig(raw) {
     marginLeft: clampNumber(src.marginLeft, 0, 30, DEFAULT_PRINT_CONFIG.marginLeft),
     marginRight: clampNumber(src.marginRight, 0, 30, DEFAULT_PRINT_CONFIG.marginRight),
     innerPadding: clampNumber(src.innerPadding, 0, 10, DEFAULT_PRINT_CONFIG.innerPadding),
+    borderWidth: clampNumber(src.borderWidth, 0, 2, DEFAULT_PRINT_CONFIG.borderWidth),
+    rowSpacing: clampNumber(src.rowSpacing, 0, 10, DEFAULT_PRINT_CONFIG.rowSpacing),
+    bodyColumnWidth: clampNumber(src.bodyColumnWidth, 30, 70, DEFAULT_PRINT_CONFIG.bodyColumnWidth),
+    labelColumnWidth: clampNumber(src.labelColumnWidth, 25, 75, DEFAULT_PRINT_CONFIG.labelColumnWidth),
+    metadataColumns: Math.round(clampNumber(src.metadataColumns, 1, 6, DEFAULT_PRINT_CONFIG.metadataColumns)),
+    lineHeightScale: clampNumber(src.lineHeightScale, 70, 160, DEFAULT_PRINT_CONFIG.lineHeightScale),
+    baseFontSize: clampNumber(src.baseFontSize ?? src.tableFontSize, 6, 22, DEFAULT_PRINT_CONFIG.baseFontSize),
     headerFontSize: clampNumber(src.headerFontSize, 6, 22, DEFAULT_PRINT_CONFIG.headerFontSize),
     headerFontWeight: clampNumber(src.headerFontWeight, 400, 900, DEFAULT_PRINT_CONFIG.headerFontWeight),
-    tableFontSize: clampNumber(src.tableFontSize, 6, 14, DEFAULT_PRINT_CONFIG.tableFontSize),
-    farmaishFontSize: clampNumber(src.farmaishFontSize, 6, 14, DEFAULT_PRINT_CONFIG.farmaishFontSize),
+    labelFontSize: clampNumber(src.labelFontSize ?? src.tableFontSize, 6, 22, DEFAULT_PRINT_CONFIG.labelFontSize),
+    valueFontSize: clampNumber(src.valueFontSize ?? src.tableFontSize, 6, 22, DEFAULT_PRINT_CONFIG.valueFontSize),
+    farmaishFontSize: clampNumber(src.farmaishFontSize, 6, 22, DEFAULT_PRINT_CONFIG.farmaishFontSize),
+    footerFontSize: clampNumber(src.footerFontSize, 6, 14, DEFAULT_PRINT_CONFIG.footerFontSize),
   };
   // Insets can never shrink the printable area below 15mm in either axis.
   const fitPair = (a, b, total) => {
@@ -615,39 +641,56 @@ function normalizePrintConfig(raw) {
 function buildMeasurementPrintCss(cfg) {
   const pad = (side) => round2(side + cfg.innerPadding);
   const scale = Math.min(cfg.widthMm / 107.95, cfg.heightMm / 146.05);
+  const rowSpacing = cfg.rowSpacing * scale;
+  const lineHeight = (value) => round2(value * cfg.lineHeightScale / 100);
   return `
       html,body{margin:0!important;padding:0!important;width:${round2(cfg.widthMm)}mm!important;height:auto!important;background:#fff!important;color:#000!important}
       :root{
         --ps-paper-w:${round2(cfg.widthMm)}mm;
         --ps-paper-h:${round2(cfg.heightMm)}mm;
-        --ps-border-width:${round2(0.3 * scale)}mm;
+        --ps-border-width:${round2(cfg.borderWidth * scale)}mm;
         --ps-pad-top:${pad(cfg.marginTop)}mm;
         --ps-pad-right:${pad(cfg.marginRight)}mm;
         --ps-pad-bottom:${pad(cfg.marginBottom)}mm;
         --ps-pad-left:${pad(cfg.marginLeft)}mm;
         --ps-scale:${round2(scale)};
-        --ps-base-size:${round2(cfg.tableFontSize * scale)}pt;
+        --ps-base-size:${round2(cfg.baseFontSize * scale)}pt;
         --ps-header-size:${round2(cfg.headerFontSize * scale)}pt;
         --ps-shop-size:${round2((cfg.headerFontSize + 1) * scale)}pt;
         --ps-header-weight:${cfg.headerFontWeight};
-        --ps-label-size:${round2(cfg.tableFontSize * scale)}pt;
-        --ps-value-size:${round2(cfg.tableFontSize * scale)}pt;
-        --ps-table-size:${round2(cfg.tableFontSize * scale)}pt;
+        --ps-label-size:${round2(cfg.labelFontSize * scale)}pt;
+        --ps-value-size:${round2(cfg.valueFontSize * scale)}pt;
+        --ps-table-size:${round2(cfg.baseFontSize * scale)}pt;
         --ps-farmaish-size:${round2(cfg.farmaishFontSize * scale)}pt;
-        --ps-space-xs:${round2(0.6 * scale)}mm;
-        --ps-space-sm:${round2(scale)}mm;
-        --ps-space-md:${round2(1.5 * scale)}mm;
-        --ps-cell-pad-y:${round2(0.75 * scale)}mm;
-        --ps-cell-pad-x:${round2(scale)}mm;
-        --ps-notes-pad-x:${round2(1.5 * scale)}mm;
-        --ps-footer-size:${round2(8.5 * scale)}pt;
+        --ps-footer-size:${round2(cfg.footerFontSize * scale)}pt;
+        --ps-line-height-scale:${round2(cfg.lineHeightScale / 100)};
+        --ps-line-height-110:${lineHeight(1.1)};
+        --ps-line-height-115:${lineHeight(1.15)};
+        --ps-line-height-120:${lineHeight(1.2)};
+        --ps-line-height-125:${lineHeight(1.25)};
+        --ps-line-height-130:${lineHeight(1.3)};
+        --ps-line-height-135:${lineHeight(1.35)};
+        --ps-line-height-140:${lineHeight(1.4)};
+        --ps-line-height-145:${lineHeight(1.45)};
+        --ps-line-height-150:${lineHeight(1.5)};
+        --ps-body-column-fr:${cfg.bodyColumnWidth}fr;
+        --ps-other-column-fr:${round2(100 - cfg.bodyColumnWidth)}fr;
+        --ps-label-column-fr:${cfg.labelColumnWidth}fr;
+        --ps-value-column-fr:${round2(100 - cfg.labelColumnWidth)}fr;
+        --ps-metadata-columns:${cfg.metadataColumns};
+        --ps-space-xs:${round2(rowSpacing * 0.4)}mm;
+        --ps-space-sm:${round2((rowSpacing * 2) / 3)}mm;
+        --ps-space-md:${round2(rowSpacing)}mm;
+        --ps-cell-pad-y:${round2(rowSpacing * 0.5)}mm;
+        --ps-cell-pad-x:${round2((rowSpacing * 2) / 3)}mm;
+        --ps-notes-pad-x:${round2(rowSpacing)}mm;
       }
       .measurement-preview-backdrop{display:block!important;position:static!important;padding:0!important;background:#fff!important}
       .measurement-preview-content{display:block!important;position:static!important;width:100%!important;height:auto!important;overflow:visible!important;padding:0!important}
       .measurement-print-sheet{box-sizing:border-box!important;display:flex!important;flex-direction:column!important;width:${round2(cfg.widthMm)}mm!important;height:${round2(cfg.heightMm)}mm!important;min-height:0!important;margin:0 auto!important;padding:${pad(cfg.marginTop)}mm ${pad(cfg.marginRight)}mm ${pad(cfg.marginBottom)}mm ${pad(cfg.marginLeft)}mm!important;background:#fff!important;border:var(--ps-border-width) solid #111!important;box-shadow:none!important;break-inside:avoid;page-break-after:avoid}
       .measurement-preview-backdrop .measurement-preview-page{display:flex!important;flex:1 1 auto!important;width:100%!important;min-height:0!important;border:none!important;box-shadow:none!important;margin:0!important}
       .measurement-preview-header{display:block!important}
-      .measurement-preview-meta{grid-template-columns:repeat(3,minmax(0,1fr))!important}
+      .measurement-preview-meta{grid-template-columns:repeat(var(--ps-metadata-columns),minmax(0,1fr))!important}
       .measurement-print-source{display:none!important}
       .measurement-print-fit-warning{display:none!important}
       @page{size:${round2(cfg.widthMm)}mm ${round2(cfg.heightMm)}mm;margin:0}
@@ -691,13 +734,34 @@ async function createMeasurementPrintWindow(sourceWindow, printConfig) {
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   try {
-    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${preview.styles}</style><style>${buildMeasurementPrintCss(cfg)}</style></head><body><div class="measurement-preview-backdrop"><div class="measurement-preview-dialog"><div><div class="measurement-preview-content"><div class="measurement-print-sheet">${preview.markup}</div></div></div></div></div></body></html>`;
-    await printWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(html)}`);
+    const fontCandidates = [
+      path.join(__dirname, '..', 'Frontend', 'public', 'fonts', 'NotoNastaliqUrdu.ttf'),
+      path.join(__dirname, '..', 'Frontend', 'dist', 'fonts', 'NotoNastaliqUrdu.ttf'),
+      path.join(app.getAppPath(), 'Frontend', 'dist', 'fonts', 'NotoNastaliqUrdu.ttf'),
+      path.join(process.resourcesPath || '', 'Frontend', 'dist', 'fonts', 'NotoNastaliqUrdu.ttf'),
+    ];
+    const fontPath = fontCandidates.find((candidate) => candidate && fs.existsSync(candidate));
+    const fontCss = fontPath
+      ? `@font-face{font-family:"Noto Nastaliq Urdu";src:url("${fontPathToFileUrl(fontPath)}") format("truetype");font-display:swap}`
+      : "";
+    const html = `<!doctype html><html lang="ur" dir="rtl"><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${fontCss}</style><style>${preview.styles}</style><style>${buildMeasurementPrintCss(cfg)}</style></head><body><div class="measurement-preview-backdrop"><div class="measurement-preview-dialog"><div><div class="measurement-preview-content"><div class="measurement-print-sheet">${preview.markup}</div></div></div></div></div></body></html>`;
+    const tempHtmlPath = path.join(os.tmpdir(), `tms-measurement-${process.pid}-${Date.now()}.html`);
+    fs.writeFileSync(tempHtmlPath, html, "utf8");
+    printWindow.once('closed', () => {
+      try { fs.unlinkSync(tempHtmlPath); } catch (_) {}
+    });
+    await printWindow.loadFile(tempHtmlPath);
     const ready = await printWindow.webContents.executeJavaScript(`(async () => {
       if (document.fonts?.ready) await document.fonts.ready;
       if (document.fonts?.load) {
-        await document.fonts.load('${cfg.headerFontSize}pt "Noto Nastaliq Urdu"');
-        await document.fonts.load('${cfg.tableFontSize}pt "Noto Nastaliq Urdu"');
+        const fonts = ["Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Nirmala UI"];
+        await Promise.all(fonts.flatMap((font) => [
+          document.fonts.load('${cfg.headerFontSize}pt "' + font + '"'),
+          document.fonts.load('${cfg.baseFontSize}pt "' + font + '"'),
+          document.fonts.load('${cfg.labelFontSize}pt "' + font + '"'),
+          document.fonts.load('${cfg.valueFontSize}pt "' + font + '"'),
+          document.fonts.load('${cfg.farmaishFontSize}pt "' + font + '"'),
+        ]));
       }
       await Promise.all(Array.from(document.images).map((image) => image.decode ? image.decode().catch(() => {}) : Promise.resolve()));
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
@@ -741,8 +805,8 @@ async function createMeasurementPdfBuffer(sourceWindow, printConfig) {
       // printToPDF pageSize takes inches; preferCSSPageSize keeps the @page
       // rule (same millimeter values) authoritative when both are present.
       pageSize: {
-        width: Math.round((cfg.widthMm / 25.4) * 100) / 100,
-        height: Math.round((cfg.heightMm / 25.4) * 100) / 100,
+        width: cfg.widthMm / 25.4,
+        height: cfg.heightMm / 25.4,
       },
       // PrintToPDFMargins are flat inch values (there is no marginType);
       // zero them so the sheet CSS padding alone defines the printable area.
@@ -900,13 +964,6 @@ if (autoUpdater) {
 
   autoUpdater.on('error', (err) => {
     console.error('[updater] error', err);
-    const rawMessage = err && err.message ? err.message : String(err);
-    const message = /504|gateway timeout|timeout/i.test(rawMessage)
-      ? 'The update service is temporarily unavailable. Please try again later.'
-      : /404|no published release|release not found/i.test(rawMessage)
-        ? 'No published update release was found. Publish a non-draft, non-prerelease GitHub release with the generated update metadata and installer assets.'
-      : rawMessage;
-    sendToRenderer('update:error', { message });
   });
 }
 
@@ -922,11 +979,8 @@ function checkForUpdatesSafely() {
     .then(() => autoUpdater.checkForUpdates())
     .then(() => ({ ok: true }))
     .catch((error) => {
-      const rawMessage = error && error.message ? error.message : String(error);
-      const message = /504|gateway timeout|timeout/i.test(rawMessage)
-        ? 'The update service is temporarily unavailable. Please try again later.'
-        : rawMessage;
-      return { ok: false, message };
+      console.error('[updater] check failed', error);
+      return { ok: false, message: 'Unable to check for updates. Please try again later.' };
     })
     .finally(() => {
       updateCheckInFlight = null;
@@ -941,10 +995,13 @@ ipcMain.handle('update:check', async () => {
 ipcMain.handle('update:download', async () => {
   if (!autoUpdater) return { ok: false, message: 'Updater not available' };
   try {
-    autoUpdater.downloadUpdate();
+    autoUpdater.downloadUpdate().catch((error) => {
+      console.error('[updater] download failed', error);
+    });
     return { ok: true };
   } catch (e) {
-    return { ok: false, message: e && e.message ? e.message : String(e) };
+    console.error('[updater] download failed', e);
+    return { ok: false, message: 'Unable to download the update. Please try again later.' };
   }
 });
 
@@ -954,7 +1011,8 @@ ipcMain.handle('update:install', async () => {
     autoUpdater.quitAndInstall();
     return { ok: true };
   } catch (e) {
-    return { ok: false, message: e && e.message ? e.message : String(e) };
+    console.error('[updater] install failed', e);
+    return { ok: false, message: 'Unable to install the update. Please restart the app and try again.' };
   }
 });
 

@@ -123,11 +123,15 @@ Expected response when the cloud database is reachable:
 
 PostgreSQL (Supabase) is the only production database. The schema in
 `migrations/001_initial.sql` is applied to Supabase out of band; the service
-does not run migrations itself, with one idempotent exception: when Print
+does not run general migrations itself. At startup, it safely re-applies the
+idempotent `004_user_supabase_configs.sql` and `005_personal_store_id.sql`
+migrations so personal-database routing columns and tables exist without
+changing existing data. If those migrations cannot be applied, accounts remain
+routed to the central database and a warning is logged. When Print
 Settings are read or saved, `settingsModel` ensures the `settings.printsettings`
 column exists (added by `migrations/003_print_settings.sql`) and creates it
 if the database user permits, so the feature works without manual SQL. Do not
-run migrations against production as part of a deploy.
+run other migrations against production as part of a deploy.
 
 ## 8. CORS
 

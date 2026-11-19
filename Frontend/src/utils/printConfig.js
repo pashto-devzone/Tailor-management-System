@@ -43,12 +43,20 @@ export const DEFAULT_PRINT_SETTINGS = {
   marginRight: 2.5,
   // Extra padding inside the margins (applied to the print sheet).
   innerPadding: 0.5,
+  borderWidth: 0.3,
+  rowSpacing: 1.5,
+  bodyColumnWidth: 42,
+  labelColumnWidth: 44,
+  metadataColumns: 3,
+  lineHeightScale: 100,
   // Header and table fonts scale together from the selected paper size.
+  baseFontSize: 12.2,
   headerFontSize: 13.3,
   headerFontWeight: 700,
-  // Single control for measurement-table values in every print entry point.
-  tableFontSize: 12.2,
+  labelFontSize: 12.2,
+  valueFontSize: 12.2,
   farmaishFontSize: 12.2,
+  footerFontSize: 8.5,
 };
 
 export const PRINT_LIMITS = {
@@ -58,11 +66,23 @@ export const PRINT_LIMITS = {
   marginMax: 30,
   innerPaddingMin: 0,
   innerPaddingMax: 10,
+  borderWidthMin: 0,
+  borderWidthMax: 2,
+  rowSpacingMin: 0,
+  rowSpacingMax: 10,
   headerFontMin: 6,
   headerFontMax: 22,
-  tableFontMin: 6,
+  baseFontMin: 6,
+  baseFontMax: 22,
+  footerFontMin: 6,
+  footerFontMax: 14,
+  lineHeightMin: 70,
+  lineHeightMax: 160,
+  metadataColumnsMin: 1,
+  metadataColumnsMax: 6,
   // Keep large selections usable on the smallest supported slip.
-  tableFontMax: 14,
+  tableFontMin: 6,
+  tableFontMax: 22,
   // After margins + inner padding, at least this much of the paper must
   // remain as printable area in both directions.
   minPrintableMm: 15,
@@ -179,6 +199,8 @@ export function normalizePrintSettings(raw) {
   let marginLeft = normalizeBoundedNumber(src.marginLeft, PRINT_LIMITS.marginMin, PRINT_LIMITS.marginMax, DEFAULT_PRINT_SETTINGS.marginLeft, "Left margin", errors);
   let marginRight = normalizeBoundedNumber(src.marginRight, PRINT_LIMITS.marginMin, PRINT_LIMITS.marginMax, DEFAULT_PRINT_SETTINGS.marginRight, "Right margin", errors);
   const innerPadding = normalizeBoundedNumber(src.innerPadding, PRINT_LIMITS.innerPaddingMin, PRINT_LIMITS.innerPaddingMax, DEFAULT_PRINT_SETTINGS.innerPadding, "Inner padding", errors);
+  const borderWidth = normalizeBoundedNumber(src.borderWidth, PRINT_LIMITS.borderWidthMin, PRINT_LIMITS.borderWidthMax, DEFAULT_PRINT_SETTINGS.borderWidth, "Border width", errors);
+  const rowSpacing = normalizeBoundedNumber(src.rowSpacing, PRINT_LIMITS.rowSpacingMin, PRINT_LIMITS.rowSpacingMax, DEFAULT_PRINT_SETTINGS.rowSpacing, "Row spacing", errors);
 
   // Guard: margins can never shrink the printable area below the minimum.
   const fitPair = (a, b, total, direction) => {
@@ -195,9 +217,19 @@ export function normalizePrintSettings(raw) {
   [marginTop, marginBottom] = fitPair(marginTop, marginBottom, heightMm, "Vertical");
   [marginLeft, marginRight] = fitPair(marginLeft, marginRight, widthMm, "Horizontal");
 
+  const legacyTableFontSize = src.tableFontSize;
+  const baseFontSize = normalizeBoundedNumber(src.baseFontSize ?? legacyTableFontSize, PRINT_LIMITS.baseFontMin, PRINT_LIMITS.baseFontMax, DEFAULT_PRINT_SETTINGS.baseFontSize, "Base font size", errors);
   const headerFontSize = normalizeBoundedNumber(src.headerFontSize, PRINT_LIMITS.headerFontMin, PRINT_LIMITS.headerFontMax, DEFAULT_PRINT_SETTINGS.headerFontSize, "Header font size", errors);
-  const tableFontSize = normalizeBoundedNumber(src.tableFontSize, PRINT_LIMITS.tableFontMin, PRINT_LIMITS.tableFontMax, DEFAULT_PRINT_SETTINGS.tableFontSize, "Measurement table font size", errors);
+  const labelFontSize = normalizeBoundedNumber(src.labelFontSize ?? legacyTableFontSize, PRINT_LIMITS.tableFontMin, PRINT_LIMITS.tableFontMax, DEFAULT_PRINT_SETTINGS.labelFontSize, "Measurement label font size", errors);
+  const valueFontSize = normalizeBoundedNumber(src.valueFontSize ?? legacyTableFontSize, PRINT_LIMITS.tableFontMin, PRINT_LIMITS.tableFontMax, DEFAULT_PRINT_SETTINGS.valueFontSize, "Measurement value font size", errors);
   const farmaishFontSize = normalizeBoundedNumber(src.farmaishFontSize, PRINT_LIMITS.tableFontMin, PRINT_LIMITS.tableFontMax, DEFAULT_PRINT_SETTINGS.farmaishFontSize, "Farmaish / comment font size", errors);
+  const footerFontSize = normalizeBoundedNumber(src.footerFontSize, PRINT_LIMITS.footerFontMin, PRINT_LIMITS.footerFontMax, DEFAULT_PRINT_SETTINGS.footerFontSize, "Footer font size", errors);
+  const bodyColumnWidth = normalizeBoundedNumber(src.bodyColumnWidth, 30, 70, DEFAULT_PRINT_SETTINGS.bodyColumnWidth, "Measurements column width", errors);
+  const labelColumnWidth = normalizeBoundedNumber(src.labelColumnWidth, 25, 75, DEFAULT_PRINT_SETTINGS.labelColumnWidth, "Measurement label column width", errors);
+  const lineHeightScale = normalizeBoundedNumber(src.lineHeightScale, PRINT_LIMITS.lineHeightMin, PRINT_LIMITS.lineHeightMax, DEFAULT_PRINT_SETTINGS.lineHeightScale, "Line-height scale", errors);
+  const normalizedMetadataColumns = normalizeBoundedNumber(src.metadataColumns, PRINT_LIMITS.metadataColumnsMin, PRINT_LIMITS.metadataColumnsMax, DEFAULT_PRINT_SETTINGS.metadataColumns, "Metadata columns", errors);
+  const metadataColumns = Math.round(normalizedMetadataColumns);
+  if (metadataColumns !== normalizedMetadataColumns) errors.push("Metadata columns must be a whole number.");
 
   let headerFontWeight = DEFAULT_PRINT_SETTINGS.headerFontWeight;
   if (src.headerFontWeight !== undefined && src.headerFontWeight !== null && src.headerFontWeight !== "") {
@@ -218,10 +250,19 @@ export function normalizePrintSettings(raw) {
       marginLeft,
       marginRight,
       innerPadding,
+      borderWidth,
+      rowSpacing,
+      bodyColumnWidth,
+      labelColumnWidth,
+      metadataColumns,
+      lineHeightScale,
+      baseFontSize,
       headerFontSize,
       headerFontWeight,
-      tableFontSize,
+      labelFontSize,
+      valueFontSize,
       farmaishFontSize,
+      footerFontSize,
     },
     errors,
   };
@@ -234,30 +275,47 @@ export function normalizePrintSettings(raw) {
 export function printSettingsCssVars(settings) {
   const { widthMm, heightMm } = paperDimensionsMm(settings);
   const scale = Math.min(widthMm / 107.95, heightMm / 146.05);
+  const rowSpacing = settings.rowSpacing;
+  const lineHeight = (value) => round2(value * settings.lineHeightScale / 100);
   return [
     `--ps-paper-w: ${round2(widthMm)}mm`,
     `--ps-paper-h: ${round2(heightMm)}mm`,
-    `--ps-border-width: ${round2(0.3 * scale)}mm`,
+    `--ps-border-width: ${round2(settings.borderWidth * scale)}mm`,
     `--ps-pad-top: ${round2(settings.marginTop + settings.innerPadding)}mm`,
     `--ps-pad-right: ${round2(settings.marginRight + settings.innerPadding)}mm`,
     `--ps-pad-bottom: ${round2(settings.marginBottom + settings.innerPadding)}mm`,
     `--ps-pad-left: ${round2(settings.marginLeft + settings.innerPadding)}mm`,
     `--ps-scale: ${round2(scale)}`,
-    `--ps-base-size: ${round2(settings.tableFontSize * scale)}pt`,
+    `--ps-base-size: ${round2(settings.baseFontSize * scale)}pt`,
     `--ps-header-size: ${round2(settings.headerFontSize * scale)}pt`,
     `--ps-shop-size: ${round2((settings.headerFontSize + 1) * scale)}pt`,
     `--ps-header-weight: ${settings.headerFontWeight}`,
-    `--ps-label-size: ${round2(settings.tableFontSize * scale)}pt`,
-    `--ps-value-size: ${round2(settings.tableFontSize * scale)}pt`,
-    `--ps-table-size: ${round2(settings.tableFontSize * scale)}pt`,
+    `--ps-label-size: ${round2(settings.labelFontSize * scale)}pt`,
+    `--ps-value-size: ${round2(settings.valueFontSize * scale)}pt`,
+    `--ps-table-size: ${round2(settings.baseFontSize * scale)}pt`,
     `--ps-farmaish-size: ${round2(settings.farmaishFontSize * scale)}pt`,
-    `--ps-space-xs: ${round2(0.6 * scale)}mm`,
-    `--ps-space-sm: ${round2(scale)}mm`,
-    `--ps-space-md: ${round2(1.5 * scale)}mm`,
-    `--ps-cell-pad-y: ${round2(0.75 * scale)}mm`,
-    `--ps-cell-pad-x: ${round2(scale)}mm`,
-    `--ps-notes-pad-x: ${round2(1.5 * scale)}mm`,
-    `--ps-footer-size: ${round2(8.5 * scale)}pt`,
+    `--ps-footer-size: ${round2(settings.footerFontSize * scale)}pt`,
+    `--ps-line-height-scale: ${round2(settings.lineHeightScale / 100)}`,
+    `--ps-line-height-110: ${lineHeight(1.1)}`,
+    `--ps-line-height-115: ${lineHeight(1.15)}`,
+    `--ps-line-height-120: ${lineHeight(1.2)}`,
+    `--ps-line-height-125: ${lineHeight(1.25)}`,
+    `--ps-line-height-130: ${lineHeight(1.3)}`,
+    `--ps-line-height-135: ${lineHeight(1.35)}`,
+    `--ps-line-height-140: ${lineHeight(1.4)}`,
+    `--ps-line-height-145: ${lineHeight(1.45)}`,
+    `--ps-line-height-150: ${lineHeight(1.5)}`,
+    `--ps-body-column-fr: ${settings.bodyColumnWidth}fr`,
+    `--ps-other-column-fr: ${round2(100 - settings.bodyColumnWidth)}fr`,
+    `--ps-label-column-fr: ${settings.labelColumnWidth}fr`,
+    `--ps-value-column-fr: ${round2(100 - settings.labelColumnWidth)}fr`,
+    `--ps-metadata-columns: ${settings.metadataColumns}`,
+    `--ps-space-xs: ${round2(rowSpacing * 0.4 * scale)}mm`,
+    `--ps-space-sm: ${round2((rowSpacing * 2) / 3 * scale)}mm`,
+    `--ps-space-md: ${round2(rowSpacing * scale)}mm`,
+    `--ps-cell-pad-y: ${round2((rowSpacing * 0.5) * scale)}mm`,
+    `--ps-cell-pad-x: ${round2((rowSpacing * 2) / 3 * scale)}mm`,
+    `--ps-notes-pad-x: ${round2(rowSpacing * scale)}mm`,
   ].join(";");
 }
 
@@ -277,7 +335,8 @@ export function describePrintSettings(settings) {
     `Paper: ${presetLabel} — ${round2(widthMm)} × ${round2(heightMm)} mm (${round2(mmToIn(widthMm))} × ${round2(mmToIn(heightMm))} in), ${settings.orientation}`,
     `Margins: top ${settings.marginTop} / right ${settings.marginRight} / bottom ${settings.marginBottom} / left ${settings.marginLeft} mm, inner padding ${settings.innerPadding} mm`,
     `Printable area: ${round2(area.widthMm)} × ${round2(area.heightMm)} mm`,
-    `Fonts: header ${settings.headerFontSize}pt (weight ${settings.headerFontWeight}), measurements ${settings.tableFontSize}pt, farmaish & notes ${settings.farmaishFontSize}pt`,
+    `Fonts: base ${settings.baseFontSize}pt, header ${settings.headerFontSize}pt (weight ${settings.headerFontWeight}), labels ${settings.labelFontSize}pt, values ${settings.valueFontSize}pt, farmaish / comments ${settings.farmaishFontSize}pt, footer ${settings.footerFontSize}pt`,
+    `Layout: row spacing ${settings.rowSpacing} mm, measurements section ${settings.bodyColumnWidth}%, label column ${settings.labelColumnWidth}%, ${settings.metadataColumns} header columns, line-height scale ${settings.lineHeightScale}%`,
     "The printer driver may substitute its own paper size — confirm the selected paper in the print dialog and print at 100% / Actual size.",
   ].join("\n");
 }

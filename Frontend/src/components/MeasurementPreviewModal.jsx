@@ -4,7 +4,6 @@ import {
   getMeasurementLabel,
   getOrderedMeasurementEntries,
   normalizeMeasurementData,
-  repairMojibakeText,
   cleanPrintMeasurementValue,
 } from "../utils/measurementUtils";
 import {
@@ -100,7 +99,7 @@ export default function MeasurementPreviewModal({
     : details.notes != null && String(details.notes).trim() !== ""
       ? details.notes
       : measurement?.measurement_notes ?? "";
-  const notes = repairMojibakeText(String(noteValue));
+  const notes = String(noteValue);
   const formatDate = (value) => {
     if (!value) return "";
     const isoDate = String(value).match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -207,6 +206,11 @@ export default function MeasurementPreviewModal({
             }}
           >
             <style>{`
+              @font-face {
+                font-family: "Noto Nastaliq Urdu";
+                src: url("./fonts/NotoNastaliqUrdu.ttf") format("truetype");
+                font-display: swap;
+              }
               .measurement-preview-content {
                 display: flex;
                 justify-content: center;
@@ -266,18 +270,18 @@ export default function MeasurementPreviewModal({
                 direction: ltr;
                 padding-bottom: var(--ps-space-sm);
                 border-bottom: var(--ps-border-width) solid #111;
-                line-height: 1.35;
+                line-height: var(--ps-line-height-135);
                 min-width: 0;
               }
               .measurement-preview-meta {
                 display: grid;
-                grid-template-columns: repeat(3, minmax(0, 1fr));
+                grid-template-columns: repeat(var(--ps-metadata-columns), minmax(0, 1fr));
                 gap: var(--ps-space-xs) var(--ps-space-sm);
                 min-width: 0;
                 direction: ltr;
                 font-family: Arial, sans-serif;
                 font-size: var(--ps-base-size);
-                line-height: 1.25;
+                line-height: var(--ps-line-height-125);
               }
               .measurement-preview-meta-row {
                 display: grid;
@@ -309,7 +313,7 @@ export default function MeasurementPreviewModal({
                 font-family: Arial, sans-serif;
                 font-size: var(--ps-shop-size);
                 font-weight: 800;
-                line-height: 1.3;
+                line-height: var(--ps-line-height-130);
                 margin-bottom: var(--ps-space-md);
                 overflow-wrap: normal;
                 word-break: normal;
@@ -323,13 +327,13 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-shop-detail {
                 font-size: var(--ps-table-size);
-                line-height: 1.45;
+                line-height: var(--ps-line-height-145);
                 overflow-wrap: anywhere;
                 word-break: break-word;
               }
               .measurement-preview-body {
                 display: grid;
-                grid-template-columns: minmax(0, 42fr) minmax(0, 58fr);
+                grid-template-columns: minmax(0, var(--ps-body-column-fr)) minmax(0, var(--ps-other-column-fr));
                 gap: var(--ps-space-md);
                 flex: 1 1 auto;
                 min-height: 0;
@@ -344,7 +348,7 @@ export default function MeasurementPreviewModal({
                 flex: 0 0 auto;
                 margin: 0 0 var(--ps-space-sm);
                 font-size: var(--ps-header-size);
-                line-height: 1.35;
+                line-height: var(--ps-line-height-135);
                 font-weight: var(--ps-header-weight);
                 text-align: right;
               }
@@ -357,7 +361,7 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-row {
                 display: grid;
-                grid-template-columns: minmax(0, 44%) minmax(0, 56%);
+                grid-template-columns: minmax(0, var(--ps-label-column-fr)) minmax(0, var(--ps-value-column-fr));
                 min-height: 0;
               }
               .measurement-preview-label,
@@ -369,7 +373,7 @@ export default function MeasurementPreviewModal({
                 border: var(--ps-border-width) solid #111;
                 padding: var(--ps-cell-pad-y) var(--ps-cell-pad-x);
                 font-size: var(--ps-label-size);
-                line-height: 1.35;
+                line-height: var(--ps-line-height-135);
                 font-weight: 750;
                 overflow-wrap: anywhere;
                 word-break: break-word;
@@ -390,13 +394,13 @@ export default function MeasurementPreviewModal({
                 margin: 0 0 var(--ps-space-sm);
                 font-size: var(--ps-header-size);
                 font-weight: var(--ps-header-weight);
-                line-height: 1.4;
+                line-height: var(--ps-line-height-140);
               }
               .measurement-preview-notes {
                 border: var(--ps-border-width) solid #111;
                 padding: var(--ps-space-sm) var(--ps-notes-pad-x);
-                font-size: var(--ps-value-size);
-                line-height: 1.45;
+                font-size: var(--ps-farmaish-size);
+                line-height: var(--ps-line-height-145);
                 font-weight: 750;
                 white-space: pre-wrap;
                 overflow-wrap: anywhere;
@@ -408,7 +412,7 @@ export default function MeasurementPreviewModal({
                 padding-top: var(--ps-space-md);
                 text-align: center;
                 direction: ltr;
-                font: var(--ps-footer-size)/1.3 Arial, sans-serif;
+                font: var(--ps-footer-size)/var(--ps-line-height-130) Arial, sans-serif;
               }
               @media (max-width: 700px) {
                 .measurement-print-sheet {
@@ -441,7 +445,7 @@ export default function MeasurementPreviewModal({
                   display: block !important;
                 }
                 .measurement-preview-meta {
-                  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+                  grid-template-columns: repeat(var(--ps-metadata-columns), minmax(0, 1fr)) !important;
                 }
               }
               @page {

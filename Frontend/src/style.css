@@ -436,6 +436,140 @@ button {
   margin-bottom: 1.5rem;
 }
 
+.page-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  animation: dashboard-fade-in 240ms ease-out both;
+}
+
+.page-dashboard .section-header {
+  gap: 1rem;
+  margin-bottom: 0;
+}
+
+.page-dashboard .section-header h2 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.page-dashboard .section-header p {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.page-dashboard .dashboard-meta {
+  margin-bottom: 0;
+}
+
+.page-dashboard .stats-grid {
+  gap: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.page-dashboard .stat-card {
+  border-radius: 16px;
+  transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+}
+
+.page-dashboard .stat-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.09);
+}
+
+.page-dashboard .stat-card p {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.page-dashboard .stat-card h3 {
+  margin: 0.35rem 0 0;
+  font-size: clamp(1.35rem, 2vw, 1.75rem);
+  line-height: 1.25;
+}
+
+.page-dashboard .stat-change {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.page-dashboard .dashboard-filter select {
+  min-width: 130px;
+  margin: 0;
+  padding: 0.55rem 0.75rem !important;
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.page-dashboard .dashboard-filter select:focus-visible,
+.page-dashboard .button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.page-dashboard .button {
+  transition: background-color 180ms ease, border-color 180ms ease, color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.page-dashboard .dashboard-summary {
+  margin-top: 0.25rem;
+  border-radius: 16px;
+}
+
+.page-dashboard .dashboard-summary h3 {
+  margin-bottom: 1rem;
+}
+
+.page-dashboard .summary-grid {
+  gap: 0.75rem;
+}
+
+.page-dashboard .summary-item {
+  gap: 0.4rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+}
+
+.page-dashboard .summary-item .label {
+  font-size: 0.85rem;
+}
+
+.page-dashboard .summary-item .value {
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+@keyframes dashboard-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page-dashboard {
+    animation: none;
+  }
+
+  .page-dashboard .stat-card,
+  .page-dashboard .dashboard-filter select,
+  .page-dashboard .button {
+    transition: none;
+  }
+
+  .page-dashboard .stat-card:hover {
+    transform: none;
+  }
+}
+
 .summary-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
