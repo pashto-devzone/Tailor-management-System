@@ -258,7 +258,7 @@ export default function Measurements() {
         {error && <p className="message error">{error}</p>}
       </div>
 
-      <div className="card form-card">
+      <div className="card form-card measurements-customer-card">
         <div className="form-header">
           <div>
             <h3>Select Customer</h3>
@@ -282,6 +282,7 @@ export default function Measurements() {
             </select>
           </div>
         </label>
+        {selectedCustomerObj && <div className="selected-customer-chip"><span>{selectedCustomerObj.name?.charAt(0)?.toUpperCase() || "?"}</span><strong>{selectedCustomerObj.name}</strong><small>{selectedCustomerObj.phone}</small></div>}
       </div>
 
       <div className="card measurements-card">

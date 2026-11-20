@@ -43,6 +43,9 @@ ALTER TABLE user_supabase_configs ADD COLUMN IF NOT EXISTS schema_checked BOOLEA
 ALTER TABLE user_supabase_configs ADD COLUMN IF NOT EXISTS schema_ok BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE user_supabase_configs ADD COLUMN IF NOT EXISTS last_tested_at TIMESTAMPTZ;
 ALTER TABLE user_supabase_configs ADD COLUMN IF NOT EXISTS last_test_error TEXT;
+ALTER TABLE user_supabase_configs ADD COLUMN IF NOT EXISTS last_keepalive_at TIMESTAMPTZ;
+ALTER TABLE user_supabase_configs ADD COLUMN IF NOT EXISTS last_keepalive_ok BOOLEAN;
+ALTER TABLE user_supabase_configs ADD COLUMN IF NOT EXISTS last_keepalive_error TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_user_supabase_configs_user_id ON user_supabase_configs(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_supabase_configs_status ON user_supabase_configs(status);

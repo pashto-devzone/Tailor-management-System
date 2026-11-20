@@ -47,11 +47,14 @@ export const DEFAULT_PRINT_SETTINGS = {
   rowSpacing: 1.5,
   bodyColumnWidth: 42,
   labelColumnWidth: 44,
+  measurementLabelColumnWidth: 44,
+  farmaishLabelColumnWidth: 44,
+  tableGapMm: 1.5,
   metadataColumns: 3,
   lineHeightScale: 100,
   // Header and table fonts scale together from the selected paper size.
   baseFontSize: 12.2,
-  headerFontSize: 13.3,
+  headerFontSize: 11.3,
   headerFontWeight: 700,
   labelFontSize: 12.2,
   valueFontSize: 12.2,
@@ -70,19 +73,21 @@ export const PRINT_LIMITS = {
   borderWidthMax: 2,
   rowSpacingMin: 0,
   rowSpacingMax: 10,
-  headerFontMin: 6,
-  headerFontMax: 22,
-  baseFontMin: 6,
-  baseFontMax: 22,
-  footerFontMin: 6,
-  footerFontMax: 14,
+  tableGapMin: 0,
+  tableGapMax: 15,
+  headerFontMin: 8,
+  headerFontMax: 28,
+  baseFontMin: 8,
+  baseFontMax: 28,
+  footerFontMin: 8,
+  footerFontMax: 28,
   lineHeightMin: 70,
   lineHeightMax: 160,
   metadataColumnsMin: 1,
   metadataColumnsMax: 6,
   // Keep large selections usable on the smallest supported slip.
-  tableFontMin: 6,
-  tableFontMax: 22,
+  tableFontMin: 8,
+  tableFontMax: 28,
   // After margins + inner padding, at least this much of the paper must
   // remain as printable area in both directions.
   minPrintableMm: 15,
@@ -226,6 +231,9 @@ export function normalizePrintSettings(raw) {
   const footerFontSize = normalizeBoundedNumber(src.footerFontSize, PRINT_LIMITS.footerFontMin, PRINT_LIMITS.footerFontMax, DEFAULT_PRINT_SETTINGS.footerFontSize, "Footer font size", errors);
   const bodyColumnWidth = normalizeBoundedNumber(src.bodyColumnWidth, 30, 70, DEFAULT_PRINT_SETTINGS.bodyColumnWidth, "Measurements column width", errors);
   const labelColumnWidth = normalizeBoundedNumber(src.labelColumnWidth, 25, 75, DEFAULT_PRINT_SETTINGS.labelColumnWidth, "Measurement label column width", errors);
+  const measurementLabelColumnWidth = normalizeBoundedNumber(src.measurementLabelColumnWidth ?? labelColumnWidth, 15, 70, DEFAULT_PRINT_SETTINGS.measurementLabelColumnWidth, "Measurements label column width", errors);
+  const farmaishLabelColumnWidth = normalizeBoundedNumber(src.farmaishLabelColumnWidth ?? labelColumnWidth, 15, 70, DEFAULT_PRINT_SETTINGS.farmaishLabelColumnWidth, "Farmaish label column width", errors);
+  const tableGapMm = normalizeBoundedNumber(src.tableGapMm, PRINT_LIMITS.tableGapMin, PRINT_LIMITS.tableGapMax, DEFAULT_PRINT_SETTINGS.tableGapMm, "Table gap", errors);
   const lineHeightScale = normalizeBoundedNumber(src.lineHeightScale, PRINT_LIMITS.lineHeightMin, PRINT_LIMITS.lineHeightMax, DEFAULT_PRINT_SETTINGS.lineHeightScale, "Line-height scale", errors);
   const normalizedMetadataColumns = normalizeBoundedNumber(src.metadataColumns, PRINT_LIMITS.metadataColumnsMin, PRINT_LIMITS.metadataColumnsMax, DEFAULT_PRINT_SETTINGS.metadataColumns, "Metadata columns", errors);
   const metadataColumns = Math.round(normalizedMetadataColumns);
@@ -254,6 +262,9 @@ export function normalizePrintSettings(raw) {
       rowSpacing,
       bodyColumnWidth,
       labelColumnWidth,
+      measurementLabelColumnWidth,
+      farmaishLabelColumnWidth,
+      tableGapMm,
       metadataColumns,
       lineHeightScale,
       baseFontSize,
@@ -274,7 +285,7 @@ export function normalizePrintSettings(raw) {
  */
 export function printSettingsCssVars(settings) {
   const { widthMm, heightMm } = paperDimensionsMm(settings);
-  const scale = Math.min(widthMm / 107.95, heightMm / 146.05);
+  const scale = Math.min(1, widthMm / 107.95, heightMm / 146.05);
   const rowSpacing = settings.rowSpacing;
   const lineHeight = (value) => round2(value * settings.lineHeightScale / 100);
   return [
@@ -309,6 +320,11 @@ export function printSettingsCssVars(settings) {
     `--ps-other-column-fr: ${round2(100 - settings.bodyColumnWidth)}fr`,
     `--ps-label-column-fr: ${settings.labelColumnWidth}fr`,
     `--ps-value-column-fr: ${round2(100 - settings.labelColumnWidth)}fr`,
+    `--ps-measure-label-fr: ${settings.measurementLabelColumnWidth}fr`,
+    `--ps-measure-value-fr: ${round2(100 - settings.measurementLabelColumnWidth)}fr`,
+    `--ps-farmaish-label-fr: ${settings.farmaishLabelColumnWidth}fr`,
+    `--ps-farmaish-value-fr: ${round2(100 - settings.farmaishLabelColumnWidth)}fr`,
+    `--ps-table-gap: ${settings.tableGapMm}mm`,
     `--ps-metadata-columns: ${settings.metadataColumns}`,
     `--ps-space-xs: ${round2(rowSpacing * 0.4 * scale)}mm`,
     `--ps-space-sm: ${round2((rowSpacing * 2) / 3 * scale)}mm`,

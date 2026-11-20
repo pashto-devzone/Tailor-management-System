@@ -1,4 +1,4 @@
-﻿const bcrypt = require("bcrypt");
+const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
@@ -28,15 +28,15 @@ exports.register = async (req, res) => {
   if (password.length < 6) return res.status(400).json({ message: "Password kam se kam 6 characters ka hona chahiye" });
   // Normalize email to lowercase to ensure case-insensitive login
   const normalizedEmail = email.toLowerCase().trim();
-  const existing = await db.prepare("SELECT id FROM users WHERE email = ?").get(normalizedEmail);
+  const existing = await db.central.prepare("SELECT id FROM users WHERE email = ?").get(normalizedEmail);
   if (existing) return res.status(409).json({ message: "An account with this email already exists." });
 
   // Central DB store for auth/account purposes (always created for all users)
   const slug = `${normalizedEmail.split("@")[0]}-${Date.now()}`.toLowerCase().replace(/[^a-z0-9-]/g, "");
-  const centralStore = await db.prepare("INSERT INTO stores (name, slug) VALUES (?, ?) RETURNING id").run(shopName || name, slug);
+  const centralStore = await db.central.prepare("INSERT INTO stores (name, slug) VALUES (?, ?) RETURNING id").run(shopName || name, slug);
   const centralStoreId = centralStore.lastInsertRowid;
   const passwordHash = await bcrypt.hash(password, 10);
-  const user = await db.prepare(
+  const user = await db.central.prepare(
     "INSERT INTO users (store_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?) RETURNING id",
   ).run(centralStoreId, name, normalizedEmail, passwordHash, "owner");
   const userId = user.lastInsertRowid;
@@ -128,7 +128,7 @@ exports.register = async (req, res) => {
   const id = sessionId();
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
   const token = jwt.sign({ userId, storeId: centralStoreId, role: "owner", personalStoreId, jti: String(id) }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-  await db.prepare("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)").run(id, userId, token, expiresAt);
+  await db.central.prepare("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)").run(id, userId, token, expiresAt);
   return res.status(201).json({
     token,
     user: { id: userId, store_id: centralStoreId, personal_store_id: personalStoreId, name, email, role: "owner" },
@@ -144,20 +144,20 @@ exports.login = async (req, res) => {
   if (!email || !password) return res.status(400).json({ message: "Email aur password required hain" });
   // Normalize email to lowercase for case-insensitive login
   const normalizedEmail = email.toLowerCase().trim();
-  const user = await db.prepare("SELECT * FROM users WHERE email = ?").get(normalizedEmail);
+  const user = await db.central.prepare("SELECT * FROM users WHERE email = ?").get(normalizedEmail);
   if (!user || !(await bcrypt.compare(password, user.password_hash))) {
     return res.status(401).json({ message: "Invalid email/username or password." });
   }
   const id = sessionId();
   const expiresAt = new Date(Date.now() + 7 * 86400000).toISOString();
   const token = jwt.sign({ userId: user.id, storeId: user.store_id, role: user.role, personalStoreId: user.personal_store_id, jti: String(id) }, JWT_SECRET, { expiresIn: JWT_EXPIRES });
-  await db.prepare("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)").run(id, user.id, token, expiresAt);
+  await db.central.prepare("INSERT INTO sessions (id, user_id, token, expires_at) VALUES (?, ?, ?, ?)").run(id, user.id, token, expiresAt);
   return res.json({ token, user: { id: user.id, store_id: user.store_id, personal_store_id: user.personal_store_id, name: user.name, email: user.email, role: user.role } });
 };
 
 exports.logout = async (req, res) => {
   const token = req.headers.authorization?.split(" ")[1];
-  if (token) await db.prepare("DELETE FROM sessions WHERE token = ?").run(token);
+  if (token) await db.central.prepare("DELETE FROM sessions WHERE token = ?").run(token);
   return res.json({ message: "Logged out successfully" });
 };
 
@@ -171,19 +171,19 @@ exports.changePassword = async (req, res) => {
   if (!currentPassword || !newPassword || String(newPassword).length < 6) {
     return res.status(400).json({ message: "Enter your current password and a new password of at least 6 characters." });
   }
-  const user = await db.prepare("SELECT id, password_hash FROM users WHERE id = ? AND store_id = ?").get(req.user.id, req.storeId);
+  const user = await db.central.prepare("SELECT id, password_hash FROM users WHERE id = ? AND store_id = ?").get(req.user.id, req.storeId);
   if (!user || !(await bcrypt.compare(currentPassword, user.password_hash))) {
     return res.status(400).json({ message: "Current password is incorrect." });
   }
   const hash = await bcrypt.hash(newPassword, 10);
-  await db.prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?").run(hash, req.user.id, req.storeId);
+  await db.central.prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND store_id = ?").run(hash, req.user.id, req.storeId);
   // Keep this verified session alive and revoke the user's other sessions.
   const activeToken = req.headers.authorization?.split(" ")[1] || "";
-  await db.prepare("DELETE FROM sessions WHERE user_id = ? AND token <> ?").run(req.user.id, activeToken);
+  await db.central.prepare("DELETE FROM sessions WHERE user_id = ? AND token <> ?").run(req.user.id, activeToken);
   return res.json({ message: "Password updated successfully. Other signed-in sessions have been logged out." });
 };
 
-const ensureResetTable = () => db.prepare(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
+const ensureResetTable = () => db.central.prepare(`CREATE TABLE IF NOT EXISTS password_reset_tokens (
   token_hash TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL,
   expires_at TEXT NOT NULL,
@@ -221,12 +221,12 @@ exports.requestPasswordReset = async (req, res) => {
   const email = String(req.body?.email || "").trim().toLowerCase();
   if (!email) return res.status(400).json({ message: "Enter your registered email address." });
   await ensureResetTable();
-  const user = await db.prepare("SELECT id, email, name FROM users WHERE LOWER(email) = LOWER(?)").get(email);
+  const user = await db.central.prepare("SELECT id, email, name FROM users WHERE LOWER(email) = LOWER(?)").get(email);
   if (user) {
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
-    await db.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").run(user.id);
-    await db.prepare("INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(tokenHash, user.id, new Date(now + 30 * 60 * 1000).toISOString());
+    await db.central.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").run(user.id);
+    await db.central.prepare("INSERT INTO password_reset_tokens (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(tokenHash, user.id, new Date(now + 30 * 60 * 1000).toISOString());
     const link = new URL(mailer.resetUrl);
     // Keep the bearer token in the URL fragment so it is not sent in the
     // browser's HTTP request or ordinary web access logs.
@@ -241,7 +241,7 @@ exports.requestPasswordReset = async (req, res) => {
     } catch (_) {
       // Keep the public response indistinguishable for registered and
       // unregistered addresses, and do not log recovery links or tokens.
-      await db.prepare("DELETE FROM password_reset_tokens WHERE token_hash = ?").run(tokenHash);
+      await db.central.prepare("DELETE FROM password_reset_tokens WHERE token_hash = ?").run(tokenHash);
     }
   }
   return res.json({ message: "If an account exists for that email, a password recovery link has been sent." });
@@ -252,15 +252,14 @@ exports.resetPassword = async (req, res) => {
   if (!token || !newPassword || String(newPassword).length < 6) return res.status(400).json({ message: "The recovery link is invalid or expired, or the new password is too short." });
   await ensureResetTable();
   const tokenHash = crypto.createHash("sha256").update(String(token)).digest("hex");
-  const reset = await db.prepare("SELECT user_id, expires_at FROM password_reset_tokens WHERE token_hash = ?").get(tokenHash);
+  const reset = await db.central.prepare("SELECT user_id, expires_at FROM password_reset_tokens WHERE token_hash = ?").get(tokenHash);
   if (!reset || new Date(reset.expires_at).getTime() <= Date.now()) {
-    if (reset) await db.prepare("DELETE FROM password_reset_tokens WHERE token_hash = ?").run(tokenHash);
+    if (reset) await db.central.prepare("DELETE FROM password_reset_tokens WHERE token_hash = ?").run(tokenHash);
     return res.status(400).json({ message: "The recovery link is invalid or expired. Request a new link." });
   }
   const hash = await bcrypt.hash(newPassword, 10);
-  await db.prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(hash, reset.user_id);
-  await db.prepare("DELETE FROM sessions WHERE user_id = ?").run(reset.user_id);
-  await db.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").run(reset.user_id);
+  await db.central.prepare("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(hash, reset.user_id);
+  await db.central.prepare("DELETE FROM sessions WHERE user_id = ?").run(reset.user_id);
+  await db.central.prepare("DELETE FROM password_reset_tokens WHERE user_id = ?").run(reset.user_id);
   return res.json({ message: "Password reset successfully. You can now sign in." });
 };
-

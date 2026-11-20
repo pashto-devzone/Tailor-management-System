@@ -502,7 +502,7 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
             <div className="print-header-fields">
               <div className="print-meta-grid">
                 <div className="meta-row" data-print-customer>
-                  <span className="meta-label" dir="rtl">{"\u06af\u0627\u06c1\u06a9:"}</span>
+                  <span className="meta-label" dir="rtl">{"\u06af\u0627\u06c1\u06a9 \u06a9\u0627 \u0646\u0627\u0645:"}</span>
                   <span className="meta-value" dir="auto">{customer?.name || ""}</span>
                 </div>
                 {safe(customer?.phone) ? (
@@ -513,30 +513,30 @@ export default function MeasurementPrint({ shop, settings, customer, measurement
                 ) : null}
                 {safe(customer?.serial_number) ? (
                   <div className="meta-row">
-                    <span className="meta-label">Serial:</span>
+                    <span className="meta-label">{"\u0633\u06cc\u0631\u06cc\u0644:"}</span>
                     <span className="meta-value">{customer.serial_number}</span>
                   </div>
                 ) : null}
                 {safe(order?.order_number) ? (
                   <div className="meta-row">
-                    <span className="meta-label">Order Number:</span>
+                    <span className="meta-label">{"\u0622\u0631\u0688\u0631 \u0646\u0645\u0628\u0631:"}</span>
                     <span className="meta-value">{order.order_number}</span>
                   </div>
                 ) : null}
                 <div className="meta-row">
-                  <span className="meta-label">Date:</span>
+                  <span className="meta-label">{"\u062a\u0627\u0631\u06cc\u062e:"}</span>
                   <span className="meta-value">
                     {new Intl.DateTimeFormat("en-GB").format(new Date())}
                   </span>
                 </div>
                 {safe(deliveryDateValue) ? (
                   <div className="meta-row">
-                    <span className="meta-label">Delivery:</span>
+                    <span className="meta-label">{"\u0688\u06cc\u0644\u06cc\u0648\u0631\u06cc \u06a9\u06cc \u062a\u0627\u0631\u06cc\u062e:"}</span>
                     <span className="meta-value">{deliveryDateValue}</span>
                   </div>
                 ) : null}
-                <div className="meta-row"><span className="meta-label">Garment Type:</span><span className="meta-value">{order?.dress_type || measurement?.dress_type || ""}</span></div>
-                <div className="meta-row"><span className="meta-label">Suit Quantity:</span><span className="meta-value">{order?.suit_quantity ?? 1}</span></div>
+                <div className="meta-row"><span className="meta-label">{"\u0644\u0628\u0627\u0633 \u06a9\u06cc \u0642\u0633\u0645:"}</span><span className="meta-value">{order?.dress_type || measurement?.dress_type || ""}</span></div>
+                <div className="meta-row"><span className="meta-label">{"\u0633\u0648\u0679 \u06a9\u06cc \u062a\u0639\u062f\u0627\u062f:"}</span><span className="meta-value">{order?.suit_quantity ?? 1}</span></div>
               </div>
             </div>
           </div>

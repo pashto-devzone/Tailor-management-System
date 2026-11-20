@@ -70,19 +70,40 @@ export default function MeasurementPreviewModal({
       if (cancelled) return;
       const sheet = sheetRef.current;
       if (!sheet) return;
-      const paperMm = parseFloat(getComputedStyle(sheet).getPropertyValue("--ps-paper-h")) || 0;
-      const paperPx = paperMm * (96 / 25.4);
-      const prevHeight = sheet.style.height;
-      sheet.style.height = "auto";
-      const naturalPx = sheet.scrollHeight;
-      sheet.style.height = prevHeight;
-      if (!cancelled) setContentOverflows(paperPx > 0 && naturalPx > paperPx + 4);
+      const page = sheet.querySelector(".measurement-preview-page");
+      if (!page) return;
+      const scale = Math.min(1, page.clientWidth / Math.max(page.scrollWidth, 1), page.clientHeight / Math.max(page.scrollHeight, 1));
+      page.style.transformOrigin = "top right";
+      page.style.transform = `scale(${Math.max(0.01, scale)})`;
+      page.style.overflow = "visible";
+      if (!cancelled) setContentOverflows(false);
     };
     const raf = requestAnimationFrame(measure);
     return () => {
       cancelled = true;
       cancelAnimationFrame(raf);
     };
+  }, [open, printSettings]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const fitPreviewWidth = () => {
+      const sheet = sheetRef.current;
+      const container = sheet?.parentElement;
+      if (!sheet || !container) return;
+      const paperWidthMm = parseFloat(getComputedStyle(sheet).getPropertyValue("--ps-paper-w")) || 107.95;
+      const paperWidthPx = paperWidthMm * (96 / 25.4);
+      const scale = Math.min(1, Math.max(0.01, (container.clientWidth - 16) / paperWidthPx));
+      sheet.style.transformOrigin = "top center";
+      sheet.style.transform = `scale(${scale})`;
+      sheet.style.marginBottom = `${-sheet.offsetHeight * (1 - scale)}px`;
+      container.style.overflowX = "hidden";
+    };
+    fitPreviewWidth();
+    const observer = new ResizeObserver(fitPreviewWidth);
+    if (sheetRef.current?.parentElement) observer.observe(sheetRef.current.parentElement);
+    window.addEventListener("resize", fitPreviewWidth);
+    return () => { observer.disconnect(); window.removeEventListener("resize", fitPreviewWidth); };
   }, [open, printSettings]);
 
   const details = normalizeMeasurementData(measurement?.measurements || measurement || {});
@@ -112,12 +133,12 @@ export default function MeasurementPreviewModal({
   const kareegarName = details.kareegar?.name;
   const kareegarRow = ["\u06a9\u0627\u0631\u06cc\u06af\u0631:", safe(kareegarName) ? kareegarName : "\u00A0"];
   const filteredRows = [
-    ["\u06af\u0627\u06c1\u06a9:", customer?.name ?? "\u00A0"],
-    ["Serial:", customer?.serial_number ?? "\u00A0"],
-    ["B. Date:", bookingDate || "\u00A0"],
-    ["Suit Quantity:", order?.suit_quantity ?? 1],
-    ["Delivery:", deliveryDate || "\u00A0"],
     [kareegarRow[0], kareegarRow[1]],
+    ["\u06af\u0627\u06c1\u06a9 \u06a9\u0627 \u0646\u0627\u0645:", customer?.name ?? "\u00A0"],
+    ["\u0633\u06cc\u0631\u06cc\u0644:", customer?.serial_number ?? "\u00A0"],
+    ["\u062a\u0627\u0631\u06cc\u062e:", bookingDate || "\u00A0"],
+    ["\u0633\u0648\u0679 \u06a9\u06cc \u062a\u0639\u062f\u0627\u062f:", order?.suit_quantity ?? 1],
+    ["\u0688\u06cc\u0644\u06cc\u0648\u0631\u06cc \u06a9\u06cc \u062a\u0627\u0631\u06cc\u062e:", deliveryDate || "\u00A0"],
   ];
   const renderPreviewTable = (rows, variant) => (
     <div
@@ -267,28 +288,35 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-header {
                 display: block;
-                direction: ltr;
+                direction: rtl;
+                text-align: right;
                 padding-bottom: var(--ps-space-sm);
                 border-bottom: var(--ps-border-width) solid #111;
-                line-height: var(--ps-line-height-135);
+                line-height: 1.6;
                 min-width: 0;
               }
               .measurement-preview-meta {
                 display: grid;
-                grid-template-columns: repeat(var(--ps-metadata-columns), minmax(0, 1fr));
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                grid-template-rows: repeat(2, minmax(0, auto));
                 gap: var(--ps-space-xs) var(--ps-space-sm);
                 min-width: 0;
-                direction: ltr;
-                font-family: Arial, sans-serif;
-                font-size: var(--ps-base-size);
-                line-height: var(--ps-line-height-125);
+                direction: rtl;
+                font-family: "Noto Nastaliq Urdu", "Jameel Noori Nastaleeq", "Nirmala UI", serif;
+                text-align: right;
+                font-size: var(--ps-header-size);
+                line-height: 1.6;
               }
               .measurement-preview-meta-row {
-                display: grid;
-                grid-template-columns: max-content minmax(0, 1fr);
-                gap: var(--ps-space-sm);
+                display: flex;
+                align-items: center;
+                gap: 4px;
                 min-width: 0;
-                direction: ltr;
+                direction: rtl;
+                text-align: right;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
                 unicode-bidi: isolate;
               }
               .measurement-preview-meta-label {
@@ -300,6 +328,11 @@ export default function MeasurementPreviewModal({
                 overflow-wrap: normal;
                 word-break: normal;
                 hyphens: none;
+                unicode-bidi: isolate;
+                direction: ltr;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
               }
               .measurement-preview-shop {
                 min-width: 0;
@@ -334,7 +367,7 @@ export default function MeasurementPreviewModal({
               .measurement-preview-body {
                 display: grid;
                 grid-template-columns: minmax(0, var(--ps-body-column-fr)) minmax(0, var(--ps-other-column-fr));
-                gap: var(--ps-space-md);
+                gap: var(--ps-table-gap);
                 flex: 1 1 auto;
                 min-height: 0;
               }
@@ -361,8 +394,11 @@ export default function MeasurementPreviewModal({
               }
               .measurement-preview-row {
                 display: grid;
-                grid-template-columns: minmax(0, var(--ps-label-column-fr)) minmax(0, var(--ps-value-column-fr));
+                grid-template-columns: minmax(0, var(--ps-measure-label-fr)) minmax(0, var(--ps-measure-value-fr));
                 min-height: 0;
+              }
+              .measurement-preview-table--farmaish .measurement-preview-row {
+                grid-template-columns: minmax(0, var(--ps-farmaish-label-fr)) minmax(0, var(--ps-farmaish-value-fr));
               }
               .measurement-preview-label,
               .measurement-preview-value {
@@ -371,12 +407,13 @@ export default function MeasurementPreviewModal({
                 align-items: center;
                 min-width: 0;
                 border: var(--ps-border-width) solid #111;
-                padding: var(--ps-cell-pad-y) var(--ps-cell-pad-x);
+                padding: max(1mm, var(--ps-cell-pad-y)) max(1mm, var(--ps-cell-pad-x));
                 font-size: var(--ps-label-size);
                 line-height: var(--ps-line-height-135);
                 font-weight: 750;
-                overflow-wrap: anywhere;
-                word-break: break-word;
+                overflow-wrap: normal;
+                word-break: normal;
+                unicode-bidi: isolate;
               }
               .measurement-preview-table--farmaish .measurement-preview-label,
               .measurement-preview-table--farmaish .measurement-preview-value {
@@ -387,8 +424,8 @@ export default function MeasurementPreviewModal({
                 background: #fafafa;
               }
               .measurement-preview-value {
-                justify-content: flex-end;
-                text-align: right;
+                justify-content: center;
+                text-align: center;
               }
               .measurement-preview-notes-title {
                 margin: 0 0 var(--ps-space-sm);
@@ -455,7 +492,7 @@ export default function MeasurementPreviewModal({
             `}</style>
             <div className="measurement-print-sheet" ref={sheetRef}>
               <div className="measurement-preview-page">
-              <div className="measurement-preview-header">
+              <div className="measurement-preview-header" dir="rtl" lang="ur">
                 <div className="measurement-preview-shop">
                   <div className="measurement-preview-shop-name">
                     {settings?.shopName || shop?.name || "Tailor Shop"}
@@ -466,10 +503,10 @@ export default function MeasurementPreviewModal({
                     <div
                       className="measurement-preview-meta-row"
                       key={`${label}-${index}`}
-                      data-preview-customer={label === "\u06af\u0627\u06c1\u06a9:" ? "" : undefined}
+                      data-preview-customer={index === 1 ? "" : undefined}
                     >
                       {label ? <span className="measurement-preview-meta-label">{label}</span> : null}
-                      <span className="measurement-preview-meta-value">{value ?? ""}</span>
+                      <span className="measurement-preview-meta-value" dir={index <= 1 ? "auto" : "ltr"}>{value ?? ""}</span>
                     </div>
                   ))}
                 </div>

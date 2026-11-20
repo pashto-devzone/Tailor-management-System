@@ -159,4 +159,27 @@ exports.disconnect = async (req, res) => {
   }
 };
 
+exports.reconnect = async (req, res) => {
+  const userId = req.user.id;
+  try {
+    const config = await getConfigByUserId(userId);
+    if (!config?.connection_host || !config?.encrypted_password) {
+      return res.status(400).json({ ok: false, message: "No saved personal Supabase connection is available." });
+    }
+    personalDb.invalidateCache(userId);
+    const result = await personalDb.testConnection({
+      host: config.connection_host, port: config.connection_port,
+      database: config.connection_database, username: config.connection_username,
+      password: require("../helpers/encryption").decrypt(config.encrypted_password),
+      sslMode: config.ssl_mode || "no-verify",
+    });
+    if (!result.ok || !result.schema_ok) return res.status(503).json({ ok: false, category: "schema_missing", message: "The database schema is incomplete. Reconnect your Supabase project in Settings." });
+    db.resetPersonalDbRetry(userId);
+    return res.json({ ok: true, category: "ready", message: "Supabase connection restored." });
+  } catch (err) {
+    const categorized = personalDb.categorizeError(err);
+    return res.status(503).json({ ok: false, category: categorized.code, message: categorized.message });
+  }
+};
+
 module.exports = exports;

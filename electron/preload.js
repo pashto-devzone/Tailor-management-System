@@ -16,9 +16,10 @@ const safeInvoke = (channel, ...args) => {
 const safeOn = (channel, listener) => {
   try {
     if (ipcRenderer && ipcRenderer.on) {
-      ipcRenderer.on(channel, (_event, ...args) => listener(...args));
+      const wrapped = (_event, ...args) => listener(...args);
+      ipcRenderer.on(channel, wrapped);
       return () => {
-        try { ipcRenderer.removeListener(channel, listener); } catch (_) {}
+        try { ipcRenderer.removeListener(channel, wrapped); } catch (_) {}
       };
     }
   } catch (_) {}
@@ -37,6 +38,7 @@ contextBridge?.exposeInMainWorld('electronAPI', {
     check: () => safeInvoke('update:check'),
     download: () => safeInvoke('update:download'),
     install: () => safeInvoke('update:install'),
+    onChecking: (listener) => safeOn('update:checking', listener),
     onAvailable: (listener) => safeOn('update:available', listener),
     onNotAvailable: (listener) => safeOn('update:not-available', listener),
     onDownloadProgress: (listener) => safeOn('update:download-progress', listener),

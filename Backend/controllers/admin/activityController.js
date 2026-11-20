@@ -29,7 +29,7 @@ exports.getActivityLog = async (req, res) => {
     sql += " ORDER BY l.created_at DESC LIMIT ? OFFSET ?";
     params.push(limitNum, offset);
 
-    const rows = db.prepare(sql).all(...params);
+    const rows = db.central.prepare(sql).all(...params);
 
     const countSql = "SELECT COUNT(*) as c FROM admin_activity_log l" + (conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "");
     const countResult = db.exec(countSql, ...conditions.length > 0 ? params.slice(0, -2) : []);

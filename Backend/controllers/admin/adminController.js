@@ -7,7 +7,7 @@ const { sendSuccess, sendError } = require("../../helpers/response");
 
 function logAdminActivity(storeId, adminId, action, targetType, targetId, targetName, details, ip) {
   try {
-    db.prepare(
+    db.central.prepare(
       "INSERT INTO admin_activity_log (admin_id, store_id, action, target_type, target_id, target_name, details, ip_address) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     ).run(adminId, storeId || null, action, targetType || null, targetId || null, targetName || null, details || null, ip || null);
     db.save();
@@ -23,7 +23,7 @@ exports.login = async (req, res) => {
       return sendError(res, "Email aur password required hain", 400);
     }
 
-    const admin = db.prepare(
+    const admin = db.central.prepare(
       "SELECT id, email, password_hash, name, role, is_active FROM admin_users WHERE email = ?"
     ).get(email.toLowerCase().trim());
 
@@ -50,11 +50,11 @@ exports.login = async (req, res) => {
       { expiresIn: ADMIN_JWT_EXPIRES }
     );
 
-    db.prepare(
+    db.central.prepare(
       "INSERT INTO admin_sessions (id, admin_id, token, expires_at) VALUES (?, ?, ?, ?)"
     ).run(sessionId, admin.id, token, expiresAt);
 
-    db.prepare(
+    db.central.prepare(
       "UPDATE admin_users SET last_login_at = ? WHERE id = ?"
     ).run(new Date().toISOString(), admin.id);
 
@@ -75,7 +75,7 @@ exports.logout = async (req, res) => {
     const ip = req.ip || req.connection?.remoteAddress || "unknown";
 
     if (token) {
-      db.prepare("DELETE FROM admin_sessions WHERE token = ?").run(token);
+      db.central.prepare("DELETE FROM admin_sessions WHERE token = ?").run(token);
       db.save();
     }
 

@@ -18,6 +18,7 @@ export default function Dashboard() {
   const [expenses, setExpenses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [personalDbDown, setPersonalDbDown] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(new Date());
   const retryCountRef = useRef(0);
 
@@ -32,6 +33,17 @@ export default function Dashboard() {
   );
 
   const [selectedFilter, setSelectedFilter] = useState("all");
+
+  useEffect(() => {
+    const down = () => setPersonalDbDown(true);
+    const up = () => setPersonalDbDown(false);
+    window.addEventListener("tms-personal-db-unavailable", down);
+    window.addEventListener("tms-personal-db-recovered", up);
+    return () => {
+      window.removeEventListener("tms-personal-db-unavailable", down);
+      window.removeEventListener("tms-personal-db-recovered", up);
+    };
+  }, []);
 
   const rangeDays = useMemo(() => {
     if (selectedFilter === "last_week") return 7;
@@ -69,7 +81,13 @@ export default function Dashboard() {
       setExpenses(Array.isArray(expensesRes.data) ? expensesRes.data : []);
       setLastRefresh(new Date());
       retryCountRef.current = 0;
+      setPersonalDbDown(false);
     } catch (err) {
+      if (/PERSONAL_DB_UNAVAILABLE|personal_db_unavailable/i.test(err.response?.data?.code || "")) {
+        setPersonalDbDown(true);
+        setError("");
+        return;
+      }
       const isNetworkError = !err?.response;
       const msg = err.response?.data?.message || err.message || "Failed to load dashboard data.";
 
@@ -89,9 +107,9 @@ export default function Dashboard() {
     loadDashboardData();
 
     // Optional: Set up auto-refresh every 30 seconds (respects selected filter)
-    const interval = setInterval(loadDashboardData, 30000);
+    const interval = setInterval(loadDashboardData, personalDbDown ? 15000 : 30000);
     return () => clearInterval(interval);
-  }, [loadDashboardData]);
+  }, [loadDashboardData, personalDbDown]);
 
   // Calculate metrics
   const pendingOrders = orders.filter((order) => order.status === "pending").length;
@@ -171,8 +189,8 @@ export default function Dashboard() {
           <p>Quick overview of your tailoring business.</p>
         </div>
 
-        <div className="dashboard-filter-actions" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <label className="dashboard-filter" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="dashboard-filter-actions">
+          <label className="dashboard-filter">
             <FaFilter />
             <span className="sr-only">Filter</span>
             <select
@@ -217,8 +235,7 @@ export default function Dashboard() {
 
 
 
-      {/* Primary Metrics */}
-      <div className="stats-grid">
+      <div className="stats-grid dashboard-stats-grid">
         <div className="stat-card card card-primary">
           <div className="stat-icon bg-primary-soft">
             <FaUsers />
@@ -255,21 +272,16 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="stat-card card card-success">
-          <div className="stat-icon bg-success-soft">
-            <FaCheckCircle />
-          </div>
-          <div>
-            <p>Completed Orders</p>
-            <h3>{rangeStartDate ? filteredCompletedOrders : completedOrders}</h3>
-
-            <small className="stat-change">Delivered</small>
-          </div>
+        <div className="stat-card card card-info">
+          <div className="stat-icon bg-info-soft"><FaClipboardList /></div>
+          <div><p>Ready Orders</p><h3>{rangeStartDate ? filteredReadyOrders : readyOrders}</h3><small className="stat-change">Ready for pickup</small></div>
         </div>
-      </div>
 
-      {/* Financial Metrics */}
-      <div className="stats-grid">
+        <div className="stat-card card card-success">
+          <div className="stat-icon bg-success-soft"><FaCheckCircle /></div>
+          <div><p>Completed Orders</p><h3>{rangeStartDate ? filteredCompletedOrders : completedOrders}</h3><small className="stat-change">Delivered</small></div>
+        </div>
+
         <div className="stat-card card card-success">
           <div className="stat-icon bg-success-soft">
             <FaMoneyBillWave />
@@ -279,18 +291,6 @@ export default function Dashboard() {
             <h3>Rs {(rangeStartDate ? filteredTotalIncome : totalIncome).toLocaleString()}</h3>
 
             <small className="stat-change">From orders</small>
-          </div>
-        </div>
-
-        <div className="stat-card card card-info">
-          <div className="stat-icon bg-info-soft">
-            <FaMoneyBillWave />
-          </div>
-          <div>
-            <p>Paid Today</p>
-            <h3>Rs {totalPaidTodayForDisplay.toLocaleString()}</h3>
-
-            <small className="stat-change">Order payments received</small>
           </div>
         </div>
 
@@ -333,17 +333,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="stat-card card card-info">
-          <div className="stat-icon bg-info-soft">
-            <FaClipboardList />
-          </div>
-          <div>
-            <p>Ready Orders</p>
-            <h3>{rangeStartDate ? filteredReadyOrders : readyOrders}</h3>
-
-            <small className="stat-change">Ready for pickup</small>
-          </div>
-        </div>
       </div>
 
       {/* Summary Section */}

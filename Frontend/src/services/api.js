@@ -94,6 +94,9 @@ export const isConfirmedAuthFailure = (error) =>
 const handleResponseError = (error) => {
   const friendlyMessage = handleApiError(error);
   error.friendlyMessage = friendlyMessage;
+  if (error?.response?.status === 503 && /personal_db_/i.test(error.response.data?.code || "")) {
+    window.dispatchEvent(new CustomEvent("tms-personal-db-unavailable", { detail: { message: message || "Your Supabase database is unavailable. Retry the connection from Settings.", category: error.response.data?.category || error.response.data?.code || "unavailable" } }));
+  }
   if (isConfirmedAuthFailure(error)) {
     const requestUrl = String(error.config?.url || "").split("?")[0];
     window.dispatchEvent(new CustomEvent("tms-auth-invalid", {
@@ -213,5 +216,6 @@ export const getUserSupabaseConfig = () => api.get("/user/supabase-config");
 export const saveUserSupabaseConfig = (data) => api.post("/user/supabase-config", data);
 export const testSupabaseConnection = (data) => api.post("/user/supabase-config/test", data);
 export const disconnectUserSupabase = () => api.delete("/user/supabase-config");
+export const reconnectUserSupabase = () => api.post("/user/supabase-config/reconnect");
 
 export default api;

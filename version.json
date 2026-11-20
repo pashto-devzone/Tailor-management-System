@@ -1,1 +1,1 @@
-{"current":"1.6.4","latest":"1.6.4","notes":"Fixed auto logout, added Cut Cuff and 0.60 sizes, fixed Urdu comment printing"}
+{"current":"1.6.7","latest":"1.6.7","note":"Database connection recovery and keep-alive"}

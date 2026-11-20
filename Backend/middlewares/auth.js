@@ -39,14 +39,14 @@ async function authenticate(req, res, next) {
   let session;
   let user;
   try {
-    session = await db.prepare("SELECT id, user_id, expires_at FROM sessions WHERE token = ?").get(token);
+    session = await db.central.prepare("SELECT id, user_id, expires_at FROM sessions WHERE token = ?").get(token);
     if (!session) {
       return res.status(401).json({ code: "AUTH_INVALID", message: "Session expired or logged out" });
     }
 
     const expiresAt = session.expires_at == null ? NaN : new Date(session.expires_at).getTime();
     if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-      await db.prepare("DELETE FROM sessions WHERE id = ?").run(session.id);
+      await db.central.prepare("DELETE FROM sessions WHERE id = ?").run(session.id);
       return res.status(401).json({ code: "AUTH_INVALID", message: "Session expired or logged out" });
     }
 
@@ -57,7 +57,7 @@ async function authenticate(req, res, next) {
       return res.status(401).json({ code: "AUTH_INVALID", message: "Invalid or expired token" });
     }
 
-    user = await db.prepare("SELECT * FROM users WHERE id = ? AND store_id = ?").get(decoded.userId, decoded.storeId);
+    user = await db.central.prepare("SELECT * FROM users WHERE id = ?").get(decoded.userId);
     if (!user) {
       return res.status(401).json({ code: "AUTH_INVALID", message: "User not found" });
     }
@@ -69,117 +69,27 @@ async function authenticate(req, res, next) {
     });
   }
 
-  // Resolve the personal operational store only for verified personal DB users.
-  let operationalStoreId = user.store_id;
-  let storeName = null;
-  let storeSlug = null;
-
-  let usesPersonalDb = false;
-  try {
-    const model = require("../models/userSupabaseConfigModel");
-    usesPersonalDb = await model.hasPersonalDb(user.id);
-  } catch (err) {
-    console.error("[auth] personal database status lookup failed:", err.message);
-    return res.status(500).json({
-      code: "AUTH_DATABASE_ERROR",
-      message: "Unable to verify your account database configuration. Please try again.",
-    });
-  }
-
-  if (usesPersonalDb) {
-    const model = require("../models/userSupabaseConfigModel");
-    let config;
-    try {
-      config = await model.getConfigByUserId(user.id);
-    } catch (err) {
-      console.error("[auth] personal database configuration lookup failed:", err.message);
-      if (model.isMissingPersonalDbSchemaError(err)) {
-        console.warn("[auth] personal database schema is unavailable; using the central database.");
-        config = null;
-        usesPersonalDb = false;
-      } else {
-        return res.status(503).json({
-          code: "PERSONAL_DB_UNAVAILABLE",
-          message: "Unable to load your personal database configuration. Please try again.",
-        });
-      }
-    }
-
-    if (usesPersonalDb && (!config || !config.connection_host || !config.encrypted_password)) {
-      return res.status(503).json({
-        code: "PERSONAL_DB_UNAVAILABLE",
-        message: "Your personal database configuration is incomplete. Reconnect it in Settings.",
-      });
-    }
-
-    if (usesPersonalDb) {
-      let pool;
-      let store;
-      let stores;
-      try {
-        const personalDb = require("../services/personalDb");
-        const { decrypt } = require("../helpers/encryption");
-        pool = personalDb.getPool({
-          host: config.connection_host,
-          port: config.connection_port,
-          database: config.connection_database,
-          username: config.connection_username,
-          password: decrypt(config.encrypted_password),
-          sslMode: config.ssl_mode || "no-verify",
-        }, user.id);
-        store = user.personal_store_id
-          ? await personalDb.getStoreById(pool, user.personal_store_id)
-          : null;
-        if (!store) stores = await personalDb.getStores(pool);
-      } catch (err) {
-        console.warn("[auth] personal database is unavailable:", err.message);
-        const decryptionFailed = /ENCRYPTION_KEY|decrypt|encrypted credential/i.test(err.message || "");
-        return res.status(503).json({
-          code: "PERSONAL_DB_UNAVAILABLE",
-          message: decryptionFailed
-            ? "Your personal database configuration could not be decrypted. Verify ENCRYPTION_KEY or reconnect it in Settings."
-            : "Your Supabase database is unreachable. Check it is not paused, then try again.",
-        });
-      }
-
-      if (!store) {
-        if (!stores || stores.length === 0) {
-          return res.status(503).json({
-            code: "PERSONAL_DB_UNAVAILABLE",
-            message: "No store is available in your personal database. Check its setup and try again.",
-          });
-        }
-        store = stores[0];
-        try {
-          await model.setPersonalStoreId(user.id, store.id);
-        } catch (err) {
-          if (model.isMissingPersonalDbSchemaError(err)) {
-            console.warn("[auth] personal store migration is unavailable; using the central database.");
-            usesPersonalDb = false;
-          } else {
-            console.error("[auth] personal store assignment database error:", err.message);
-            return res.status(500).json({
-              code: "AUTH_DATABASE_ERROR",
-              message: "Unable to save your personal store selection. Please try again.",
-            });
-          }
-        }
-      }
-      if (usesPersonalDb) {
-        operationalStoreId = store.id;
-        storeName = store.name;
-        storeSlug = store.slug;
-      }
-    }
-  }
-
-  req.user = { id: user.id, store_id: operationalStoreId, role: user.role, email: user.email, name: user.name, personal_store_id: user.personal_store_id, central_store_id: user.store_id, storeName, storeSlug };
+  const usesPersonalDb = user.has_personal_db === true || user.has_personal_db === 1;
+  const operationalStoreId = usesPersonalDb ? user.personal_store_id : user.store_id;
+  req.user = { id: user.id, store_id: operationalStoreId, role: user.role, email: user.email, name: user.name, personal_store_id: user.personal_store_id, central_store_id: user.store_id };
   req.storeId = operationalStoreId;
   db.setUserContext(user.id);
   next();
 }
 
-function requireStore(req, res, next) {
+async function requireStore(req, res, next) {
+  if (req.user) {
+    try {
+      const storeId = await db.resolveOperationalStore();
+      if (storeId) {
+        req.storeId = storeId;
+        req.user.store_id = storeId;
+        req.user.personal_store_id = storeId;
+      }
+    } catch (err) {
+      return res.status(err.status || 503).json({ code: err.code || "PERSONAL_DB_UNAVAILABLE", message: err.publicMessage ? err.message : "Your Supabase database is not reachable yet. If you just resumed it, wait a few minutes and press Retry." });
+    }
+  }
   if (!req.storeId) {
     return res.status(400).json({ message: "Store context missing" });
   }

@@ -16,12 +16,12 @@ export default function OrderPrint({ shop, settings, order }) {
             <h2>{shopName}</h2>
             {phone && (
               <p>
-                <strong>Phone:</strong> {phone}
+                <strong>{"\u0641\u0648\u0646:"}</strong> {phone}
               </p>
             )}
             {address && (
               <p>
-                <strong>Address:</strong> {address}
+                <strong>{"\u067e\u062a\u06c1:"}</strong> {address}
               </p>
             )}
           </div>

@@ -51,28 +51,12 @@ export default function OrderCard({
       </div>
 
       <div className="order-body">
-        <div className="order-card__row">
-          <div>
-            <strong>Delivery:</strong> {order.delivery_date}
-          </div>
-          <div>
-            <strong>Remaining:</strong> Rs {remainingAmount}
-          </div>
-        </div>
-
-        <div className="order-card__row">
-          <div>
-            <strong>Total:</strong> Rs {totalAmount}
-          </div>
-          <div>
-            <strong>Suit Quantity:</strong> {order.suit_quantity ?? 1}
-          </div>
-          <div>
-            <strong>Paid:</strong> Rs {paidAmount}
-          </div>
-          <div>
-            <strong>Delivery Date:</strong> {order.delivery_date}
-          </div>
+        <div className="order-info-tiles">
+          <div className="order-info-tile"><span>Delivery</span><strong>{order.delivery_date || "-"}</strong></div>
+          <div className="order-info-tile"><span>Total</span><strong>Rs {totalAmount}</strong></div>
+          <div className="order-info-tile"><span>Paid</span><strong>Rs {paidAmount}</strong></div>
+          <div className="order-info-tile is-remaining"><span>Remaining</span><strong>Rs {remainingAmount}</strong></div>
+          <div className="order-info-tile"><span>Suit Quantity</span><strong>{order.suit_quantity ?? 1}</strong></div>
         </div>
 
         <div className="order-actions">
@@ -86,25 +70,25 @@ export default function OrderCard({
             </button>
           )}
 
-          <button className="button secondary order-action" onClick={() => onPayment(order)}>
+          <button className="button secondary order-action order-action--payment" onClick={() => onPayment(order)}>
             <FaMoneyBillWave />
             <span className="order-action__text">Payment</span>
           </button>
 
           <button
-            className="button secondary order-action"
+            className="button secondary order-action order-action--print"
             onClick={() => onDownloadInvoice(order)}
           >
             <FaFilePdf />
             <span className="order-action__text">Print</span>
           </button>
 
-          <button className="button secondary order-action" onClick={() => onPrint(order)}>
+          <button className="button secondary order-action order-action--receipt" onClick={() => onPrint(order)}>
             <FaPrint />
             <span className="order-action__text">Receipt</span>
           </button>
 
-          <button className="button secondary order-action" onClick={() => onPrintMeasurements(order)}>
+          <button className="button secondary order-action order-action--measurements" onClick={() => onPrintMeasurements(order)}>
             <FaPrint />
             <span className="order-action__text">Print Measurements</span>
           </button>

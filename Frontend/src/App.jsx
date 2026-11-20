@@ -14,14 +14,57 @@ import Register from "./pages/Register.jsx";
 import ResetPassword from "./pages/ResetPassword.jsx";
 import { useAuth } from "./contexts/AuthContext.jsx";
 import { useShop } from "./contexts/ShopContext.jsx";
-import { getShopInfo } from "./services/api";
+import { getShopInfo, reconnectUserSupabase } from "./services/api";
+
+const PERSONAL_DB_MESSAGE = "Your Supabase database is not reachable yet. If you just resumed it, wait a few minutes and press Retry.";
 
 export default function App() {
   const { user, loading: authLoading, logout } = useAuth();
   const { shop, clearShop, setShop } = useShop();
-  const [shopLoading, setShopLoading] = useState(false);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [cloudUnavailable, setCloudUnavailable] = useState(false);
+  const [personalDbUnavailable, setPersonalDbUnavailable] = useState(false);
+  const [personalDbMessage, setPersonalDbMessage] = useState(PERSONAL_DB_MESSAGE);
+  const [reconnecting, setReconnecting] = useState(false);
+
+  useEffect(() => {
+    const unavailable = (event) => {
+      setPersonalDbMessage(event?.detail?.message || PERSONAL_DB_MESSAGE);
+      setPersonalDbUnavailable(true);
+    };
+    window.addEventListener("tms-personal-db-unavailable", unavailable);
+    return () => window.removeEventListener("tms-personal-db-unavailable", unavailable);
+  }, []);
+
+  useEffect(() => {
+    if (!personalDbUnavailable || !user) return undefined;
+    const timer = setInterval(() => {
+      reconnectUserSupabase().then((result) => {
+        if (result.data?.ok) {
+          setPersonalDbUnavailable(false);
+          window.dispatchEvent(new CustomEvent("tms-personal-db-recovered"));
+          window.location.reload();
+        }
+      }).catch(() => {});
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [personalDbUnavailable, user]);
+
+  const retryPersonalDatabase = async () => {
+    setReconnecting(true);
+    try {
+      const result = await reconnectUserSupabase();
+      if (result.data?.ok) {
+        setPersonalDbUnavailable(false);
+        window.dispatchEvent(new CustomEvent("tms-personal-db-recovered"));
+        window.location.reload();
+      }
+    } catch (_) {
+      setPersonalDbUnavailable(true);
+    } finally {
+      setReconnecting(false);
+    }
+  };
 
   useEffect(() => {
     const online = () => setIsOnline(true);
@@ -36,7 +79,7 @@ export default function App() {
 
   useEffect(() => {
     if (user) {
-      setShopLoading(true);
+      if (user.user?.personal_store_id) setShop((current) => current || { name: "Your Shop" });
       getShopInfo()
         .then((res) => {
           setShop(res.data || null);
@@ -53,16 +96,15 @@ export default function App() {
         } else {
           const userId = user?.user?.id;
           const skipped = userId && localStorage.getItem("tms_shop_skipped_" + userId);
-          setShop(skipped ? { skipped: true, name: "Pending setup" } : null);
+          setShop(skipped ? { skipped: true, name: "Pending setup" } : { name: "Your Shop" });
         }
-      })
-        .finally(() => setShopLoading(false));
+      });
     } else {
       clearShop();
     }
   }, [user, setShop, clearShop]);
 
-  if (authLoading || shopLoading) {
+  if (authLoading) {
     return <div className="page-loading">Loading...</div>;
   }
 
@@ -98,8 +140,9 @@ export default function App() {
           Internet connection required. Please turn on your internet connection to load and sync your account data.
         </div>
       )}
-      <Navbar />
-      <main className="page-content">
+      <Navbar user={user} onLogout={logout} />
+      <main className="page-content app-main">
+        {personalDbUnavailable && <div className="personal-db-banner" role="status"><span>{personalDbMessage}</span><button className="button secondary small" onClick={retryPersonalDatabase} disabled={reconnecting}>{reconnecting ? "Retrying..." : "Retry connection"}</button></div>}
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" />} />
           <Route path="/dashboard" element={<Dashboard />} />

@@ -12,16 +12,5 @@ router.get("/check", async (req, res) => {
   }
 });
 
-router.post("/update", async (req, res) => {
-  // mock update action
-  try {
-    await updateService.downloadUpdate();
-    await updateService.installUpdate();
-    res.json({ message: "Update action is mocked (Electron will implement later)." });
-  } catch (err) {
-    res.status(500).json({ message: "Update failed" });
-  }
-});
-
 module.exports = router;
 

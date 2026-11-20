@@ -2,18 +2,24 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { fork } = require('child_process');
+const { buildMeasurementPrintHtml } = require('./measurementPrintHtml.cjs');
 
 const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require('electron');
 
 let autoUpdater = null;
 let backendProcess = null;
+let backendStopping = false;
+let backendRestartTimer = null;
+let backendLaunchContext = null;
+let backendRestartCount = 0;
+let allowAppQuit = false;
 let updateCheckInFlight = null;
 let lastUpdateCheckAt = 0;
 const UPDATE_CHECK_COOLDOWN_MS = 60 * 1000;
 const UPDATER_GITHUB_CONFIG = {
   provider: 'github',
   owner: 'pashto-devzone',
-  repo: 'Tailor-management-System',
+  repo: 'pashto-devzone',
   releaseType: 'release',
 };
 try {
@@ -31,31 +37,10 @@ process.on('unhandledRejection', (reason) => {
 });
 
 
-function isProduction() {
-  return app.isPackaged || process.env.NODE_ENV === 'production';
-}
-
 function fontPathToFileUrl(fontPath) {
   const normalized = path.resolve(fontPath).replace(/\\/g, '/');
   const withLeadingSlash = normalized.startsWith('/') ? normalized : `/${normalized}`;
   return `file://${withLeadingSlash}`;
-}
-
-function compareVersions(left, right) {
-  const parse = (value) => String(value || '').replace(/^v/i, '').split(/[+-]/)[0].split('.').map((part) => {
-    const number = Number(part);
-    return Number.isInteger(number) && number >= 0 ? number : 0;
-  });
-  const a = parse(left);
-  const b = parse(right);
-  for (let index = 0; index < 3; index += 1) {
-    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) > (b[index] || 0) ? 1 : -1;
-  }
-  return 0;
-}
-
-function isNewerVersion(candidate, current) {
-  return compareVersions(candidate, current) > 0;
 }
 
 function getBackendEntrypointPaths() {
@@ -321,6 +306,7 @@ async function startBackendAndWait({ paths, env }) {
     silent: true
   });
   backendProcess = child;
+  backendStopping = false;
 
   let output = '';
   const appendOutput = (chunk) => {
@@ -358,6 +344,22 @@ async function startBackendAndWait({ paths, env }) {
   child.once('exit', (code, signal) => {
     exitInfo = { code, signal };
     if (backendProcess === child) backendProcess = null;
+    if (!backendStopping && backendLaunchContext) {
+      const delay = backendRestartCount < 3 ? Math.min(1000 * (2 ** backendRestartCount), 8000) : 30000;
+      backendRestartCount += 1;
+      console.warn(`[backend-supervisor] child exited (${code ?? signal}); restart in ${delay}ms`);
+      clearTimeout(backendRestartTimer);
+      backendRestartTimer = setTimeout(async () => {
+        try {
+          await startBackendAndWait(backendLaunchContext);
+          backendRestartCount = Math.max(0, backendRestartCount - 1);
+          console.log('[backend-supervisor] backend recovered');
+        } catch (error) {
+          console.error('[backend-supervisor] restart attempt failed:', error.message);
+          if (backendLaunchContext) backendRestartTimer = setTimeout(() => startBackendAndWait(backendLaunchContext).catch(() => {}), 30000);
+        }
+      }, delay);
+    }
   });
 
   while (Date.now() - start <= totalTimeoutMs) {
@@ -418,9 +420,30 @@ function resolveFrontendUrlOrFile() {
 
 
 function stopBackend() {
-  if (!backendProcess || backendProcess.killed) return;
-  backendProcess.kill();
-  backendProcess = null;
+  backendStopping = true;
+  clearTimeout(backendRestartTimer);
+  backendRestartTimer = null;
+  const child = backendProcess;
+  if (!child || child.exitCode !== null) {
+    backendProcess = null;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(forceTimer);
+      if (backendProcess === child) backendProcess = null;
+      resolve();
+    };
+    const forceTimer = setTimeout(() => {
+      try { child.kill('SIGKILL'); } catch (_) {}
+      finish();
+    }, 1800);
+    child.once('exit', finish);
+    try { child.kill('SIGTERM'); } catch (_) { finish(); }
+  });
 }
 
 async function getShopNameFromBackend() {
@@ -446,6 +469,10 @@ async function getShopNameFromBackend() {
 }
 
 app.whenReady().then(async () => {
+  if (autoUpdater && app.isPackaged) {
+    setTimeout(() => checkForUpdatesSafely(), 8_000);
+    setInterval(() => checkForUpdatesSafely(), 4 * 60 * 60 * 1000);
+  }
   app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
   // Production: disable devtools.
@@ -499,6 +526,7 @@ app.whenReady().then(async () => {
 
   try {
     // Start backend and wait
+    backendLaunchContext = { paths, env };
     await startBackendAndWait({ paths, env });
 
     // Fetch shop name for loading overlay (no inline loader script)
@@ -515,11 +543,6 @@ app.whenReady().then(async () => {
     const urlOrFile = resolveFrontendUrlOrFile();
     await win.loadURL(urlOrFile);
 
-    if (autoUpdater && isProduction()) {
-      try {
-        checkForUpdatesSafely().catch((error) => console.error('[updater] startup check failed', error));
-      } catch (_) {}
-    }
   } catch (err) {
     // Minimal error page
     const errHtml = `<!doctype html><html><body><pre>${String(err && err.stack ? err.stack : err)}</pre></body></html>`;
@@ -572,10 +595,13 @@ const DEFAULT_PRINT_CONFIG = {
   rowSpacing: 1.5,
   bodyColumnWidth: 42,
   labelColumnWidth: 44,
+  measurementLabelColumnWidth: 44,
+  farmaishLabelColumnWidth: 44,
+  tableGapMm: 1.5,
   metadataColumns: 3,
   lineHeightScale: 100,
   baseFontSize: 12.2,
-  headerFontSize: 13.3,
+  headerFontSize: 11.3,
   headerFontWeight: 700,
   labelFontSize: 12.2,
   valueFontSize: 12.2,
@@ -607,15 +633,18 @@ function normalizePrintConfig(raw) {
     rowSpacing: clampNumber(src.rowSpacing, 0, 10, DEFAULT_PRINT_CONFIG.rowSpacing),
     bodyColumnWidth: clampNumber(src.bodyColumnWidth, 30, 70, DEFAULT_PRINT_CONFIG.bodyColumnWidth),
     labelColumnWidth: clampNumber(src.labelColumnWidth, 25, 75, DEFAULT_PRINT_CONFIG.labelColumnWidth),
+    measurementLabelColumnWidth: clampNumber(src.measurementLabelColumnWidth, 15, 70, DEFAULT_PRINT_CONFIG.measurementLabelColumnWidth),
+    farmaishLabelColumnWidth: clampNumber(src.farmaishLabelColumnWidth, 15, 70, DEFAULT_PRINT_CONFIG.farmaishLabelColumnWidth),
+    tableGapMm: clampNumber(src.tableGapMm, 0, 15, DEFAULT_PRINT_CONFIG.tableGapMm),
     metadataColumns: Math.round(clampNumber(src.metadataColumns, 1, 6, DEFAULT_PRINT_CONFIG.metadataColumns)),
     lineHeightScale: clampNumber(src.lineHeightScale, 70, 160, DEFAULT_PRINT_CONFIG.lineHeightScale),
-    baseFontSize: clampNumber(src.baseFontSize ?? src.tableFontSize, 6, 22, DEFAULT_PRINT_CONFIG.baseFontSize),
-    headerFontSize: clampNumber(src.headerFontSize, 6, 22, DEFAULT_PRINT_CONFIG.headerFontSize),
+    baseFontSize: clampNumber(src.baseFontSize ?? src.tableFontSize, 8, 28, DEFAULT_PRINT_CONFIG.baseFontSize),
+    headerFontSize: clampNumber(src.headerFontSize, 8, 28, DEFAULT_PRINT_CONFIG.headerFontSize),
     headerFontWeight: clampNumber(src.headerFontWeight, 400, 900, DEFAULT_PRINT_CONFIG.headerFontWeight),
-    labelFontSize: clampNumber(src.labelFontSize ?? src.tableFontSize, 6, 22, DEFAULT_PRINT_CONFIG.labelFontSize),
-    valueFontSize: clampNumber(src.valueFontSize ?? src.tableFontSize, 6, 22, DEFAULT_PRINT_CONFIG.valueFontSize),
-    farmaishFontSize: clampNumber(src.farmaishFontSize, 6, 22, DEFAULT_PRINT_CONFIG.farmaishFontSize),
-    footerFontSize: clampNumber(src.footerFontSize, 6, 14, DEFAULT_PRINT_CONFIG.footerFontSize),
+    labelFontSize: clampNumber(src.labelFontSize ?? src.tableFontSize, 8, 28, DEFAULT_PRINT_CONFIG.labelFontSize),
+    valueFontSize: clampNumber(src.valueFontSize ?? src.tableFontSize, 8, 28, DEFAULT_PRINT_CONFIG.valueFontSize),
+    farmaishFontSize: clampNumber(src.farmaishFontSize, 8, 28, DEFAULT_PRINT_CONFIG.farmaishFontSize),
+    footerFontSize: clampNumber(src.footerFontSize, 8, 28, DEFAULT_PRINT_CONFIG.footerFontSize),
   };
   // Insets can never shrink the printable area below 15mm in either axis.
   const fitPair = (a, b, total) => {
@@ -640,7 +669,7 @@ function normalizePrintConfig(raw) {
  */
 function buildMeasurementPrintCss(cfg) {
   const pad = (side) => round2(side + cfg.innerPadding);
-  const scale = Math.min(cfg.widthMm / 107.95, cfg.heightMm / 146.05);
+  const scale = Math.min(1, cfg.widthMm / 107.95, cfg.heightMm / 146.05);
   const rowSpacing = cfg.rowSpacing * scale;
   const lineHeight = (value) => round2(value * cfg.lineHeightScale / 100);
   return `
@@ -677,6 +706,11 @@ function buildMeasurementPrintCss(cfg) {
         --ps-other-column-fr:${round2(100 - cfg.bodyColumnWidth)}fr;
         --ps-label-column-fr:${cfg.labelColumnWidth}fr;
         --ps-value-column-fr:${round2(100 - cfg.labelColumnWidth)}fr;
+        --ps-measure-label-fr:${cfg.measurementLabelColumnWidth}fr;
+        --ps-measure-value-fr:${round2(100 - cfg.measurementLabelColumnWidth)}fr;
+        --ps-farmaish-label-fr:${cfg.farmaishLabelColumnWidth}fr;
+        --ps-farmaish-value-fr:${round2(100 - cfg.farmaishLabelColumnWidth)}fr;
+        --ps-table-gap:${cfg.tableGapMm}mm;
         --ps-metadata-columns:${cfg.metadataColumns};
         --ps-space-xs:${round2(rowSpacing * 0.4)}mm;
         --ps-space-sm:${round2((rowSpacing * 2) / 3)}mm;
@@ -689,8 +723,13 @@ function buildMeasurementPrintCss(cfg) {
       .measurement-preview-content{display:block!important;position:static!important;width:100%!important;height:auto!important;overflow:visible!important;padding:0!important}
       .measurement-print-sheet{box-sizing:border-box!important;display:flex!important;flex-direction:column!important;width:${round2(cfg.widthMm)}mm!important;height:${round2(cfg.heightMm)}mm!important;min-height:0!important;margin:0 auto!important;padding:${pad(cfg.marginTop)}mm ${pad(cfg.marginRight)}mm ${pad(cfg.marginBottom)}mm ${pad(cfg.marginLeft)}mm!important;background:#fff!important;border:var(--ps-border-width) solid #111!important;box-shadow:none!important;break-inside:avoid;page-break-after:avoid}
       .measurement-preview-backdrop .measurement-preview-page{display:flex!important;flex:1 1 auto!important;width:100%!important;min-height:0!important;border:none!important;box-shadow:none!important;margin:0!important}
-      .measurement-preview-header{display:block!important}
-      .measurement-preview-meta{grid-template-columns:repeat(var(--ps-metadata-columns),minmax(0,1fr))!important}
+      .measurement-preview-header{display:block!important;direction:rtl!important;padding-bottom:var(--ps-space-sm)!important;border-bottom:var(--ps-border-width) solid #111!important}
+      .measurement-preview-meta{grid-template-columns:repeat(3,minmax(0,1fr))!important;grid-template-rows:repeat(2,minmax(0,auto))!important;font-size:var(--ps-header-size)!important;line-height:1.6!important}
+      .measurement-preview-meta-row{display:flex!important;align-items:center!important;gap:4px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;line-height:1.6!important}
+      .measurement-preview-meta-value{direction:ltr!important;unicode-bidi:isolate!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important}
+      .measurement-preview-body{gap:var(--ps-table-gap)!important}
+      .measurement-preview-row{grid-template-columns:minmax(0,var(--ps-measure-label-fr)) minmax(0,var(--ps-measure-value-fr))!important}
+      .measurement-preview-table--farmaish .measurement-preview-row{grid-template-columns:minmax(0,var(--ps-farmaish-label-fr)) minmax(0,var(--ps-farmaish-value-fr))!important}
       .measurement-print-source{display:none!important}
       .measurement-print-fit-warning{display:none!important}
       @page{size:${round2(cfg.widthMm)}mm ${round2(cfg.heightMm)}mm;margin:0}
@@ -744,7 +783,7 @@ async function createMeasurementPrintWindow(sourceWindow, printConfig) {
     const fontCss = fontPath
       ? `@font-face{font-family:"Noto Nastaliq Urdu";src:url("${fontPathToFileUrl(fontPath)}") format("truetype");font-display:swap}`
       : "";
-    const html = `<!doctype html><html lang="ur" dir="rtl"><head><meta charset="utf-8"><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>${fontCss}</style><style>${preview.styles}</style><style>${buildMeasurementPrintCss(cfg)}</style></head><body><div class="measurement-preview-backdrop"><div class="measurement-preview-dialog"><div><div class="measurement-preview-content"><div class="measurement-print-sheet">${preview.markup}</div></div></div></div></div></body></html>`;
+    const html = buildMeasurementPrintHtml(preview, buildMeasurementPrintCss(cfg), fontCss);
     const tempHtmlPath = path.join(os.tmpdir(), `tms-measurement-${process.pid}-${Date.now()}.html`);
     fs.writeFileSync(tempHtmlPath, html, "utf8");
     printWindow.once('closed', () => {
@@ -766,10 +805,18 @@ async function createMeasurementPrintWindow(sourceWindow, printConfig) {
       await Promise.all(Array.from(document.images).map((image) => image.decode ? image.decode().catch(() => {}) : Promise.resolve()));
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
       const page = document.querySelector('.measurement-preview-page');
+      const sheet = document.querySelector('.measurement-print-sheet');
       const customer = page?.querySelector('[data-preview-customer] .measurement-preview-meta-value')?.textContent.trim();
       const hasSavedDetails = Array.from(page?.querySelectorAll('.measurement-preview-table .measurement-preview-value') || [])
         .some((cell) => cell.textContent.trim());
-      return Boolean(page && customer && hasSavedDetails && page.getBoundingClientRect().width > 0 && page.getClientRects().length);
+      if (!page || !sheet || !customer || !hasSavedDetails) return false;
+      const availableWidth = page.clientWidth;
+      const availableHeight = page.clientHeight;
+      const scale = Math.min(1, availableWidth / Math.max(page.scrollWidth, 1), availableHeight / Math.max(page.scrollHeight, 1));
+      page.style.transformOrigin = 'top right';
+      page.style.transform = 'scale(' + scale + ')';
+      page.style.overflow = 'hidden';
+      return page.getBoundingClientRect().width > 0 && page.getClientRects().length > 0;
     })()`);
     if (!ready) throw new Error('The selected customer measurement details did not finish rendering.');
     // Detect content taller than the fixed print sheet so the caller can
@@ -923,14 +970,9 @@ if (autoUpdater) {
   autoUpdater.allowPrerelease = false;
   autoUpdater.allowDowngrade = false;
 
+  autoUpdater.on('checking-for-update', () => sendToRenderer('update:checking', { currentVersion: app.getVersion() }));
+
   autoUpdater.on('update-available', (info) => {
-    if (!isNewerVersion(info?.version, app.getVersion())) {
-      sendToRenderer('update:not-available', {
-        currentVersion: app.getVersion(),
-        latestVersion: info?.version || app.getVersion(),
-      });
-      return;
-    }
     sendToRenderer('update:available', {
       currentVersion: app.getVersion(),
       latestVersion: info.version,
@@ -964,10 +1006,15 @@ if (autoUpdater) {
 
   autoUpdater.on('error', (err) => {
     console.error('[updater] error', err);
+    const message = /404|no published|not found/i.test(String(err?.message || err))
+      ? 'You are on the latest version.'
+      : 'Could not check for updates. Please check your internet connection.';
+    sendToRenderer('update:error', { message, currentVersion: app.getVersion() });
   });
 }
 
 function checkForUpdatesSafely() {
+  if (!app.isPackaged) return Promise.resolve({ ok: false, message: 'Updates are available in the installed app.' });
   if (!autoUpdater) return Promise.resolve({ ok: false, message: 'Updater not available' });
   const now = Date.now();
   if (updateCheckInFlight) return updateCheckInFlight;
@@ -1008,6 +1055,7 @@ ipcMain.handle('update:download', async () => {
 ipcMain.handle('update:install', async () => {
   if (!autoUpdater) return { ok: false, message: 'Updater not available' };
   try {
+    await stopBackend();
     autoUpdater.quitAndInstall();
     return { ok: true };
   } catch (e) {
@@ -1021,6 +1069,11 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-app.on('before-quit', () => {
-  stopBackend();
+app.on('before-quit', (event) => {
+  if (allowAppQuit) return;
+  event.preventDefault();
+  stopBackend().finally(() => {
+    allowAppQuit = true;
+    app.quit();
+  });
 });

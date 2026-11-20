@@ -1,4 +1,4 @@
-﻿"use strict";
+"use strict";
 const db = require("../config/db");
 const { encrypt, decrypt, mask } = require("../helpers/encryption");
 const isMissingPersonalDbSchemaError = (error) =>
@@ -8,11 +8,11 @@ const isMissingPersonalDbSchemaError = (error) =>
 exports.isMissingPersonalDbSchemaError = isMissingPersonalDbSchemaError;
 
 exports.getConfigByUserId = async (userId) => {
-  const row = await db.prepare(
+  const row = await db.central.prepare(
     `SELECT id, user_id, connection_host, connection_port, connection_database, connection_username,
             encrypted_password, password_masked, ssl_mode, project_url, project_name,
             encrypted_anon_key, anon_key_masked, status, schema_checked, schema_ok,
-            last_tested_at, last_test_error, created_at, updated_at
+            last_tested_at, last_test_error, last_keepalive_at, last_keepalive_ok, last_keepalive_error, created_at, updated_at
      FROM user_supabase_configs WHERE user_id = ? LIMIT 1`
   ).get(userId);
   if (!row) return null;
@@ -29,10 +29,10 @@ exports.getConfigByUserId = async (userId) => {
   };
 };
 exports.getPublicConfigByUserId = async (userId) => {
-  const row = await db.prepare(
+  const row = await db.central.prepare(
     `SELECT id, user_id, connection_host, connection_port, connection_database, connection_username,
             password_masked, ssl_mode, project_url, project_name, anon_key_masked,
-            status, schema_checked, schema_ok, last_tested_at, last_test_error,
+            status, schema_checked, schema_ok, last_tested_at, last_test_error, last_keepalive_at, last_keepalive_ok, last_keepalive_error,
             created_at, updated_at
      FROM user_supabase_configs WHERE user_id = ? LIMIT 1`
   ).get(userId);
@@ -54,18 +54,21 @@ exports.getPublicConfigByUserId = async (userId) => {
     schema_ok: Boolean(row.schema_ok),
     last_tested_at: row.last_tested_at,
     last_test_error: row.last_test_error,
+    last_keepalive_at: row.last_keepalive_at,
+    last_keepalive_ok: row.last_keepalive_ok,
+    last_keepalive_error: row.last_keepalive_error,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
 };
 exports.hasPersonalDb = async (userId) => {
   try {
-    const user = await db.prepare(
+    const user = await db.central.prepare(
       "SELECT has_personal_db, personal_store_id FROM users WHERE id = ? LIMIT 1",
     ).get(userId);
     if (!user || !(user.has_personal_db === true || user.has_personal_db === 1)) return false;
 
-    const config = await db.prepare(
+    const config = await db.central.prepare(
       `SELECT connection_host, connection_port, connection_database, connection_username,
               encrypted_password, status, schema_ok
        FROM user_supabase_configs WHERE user_id = ? LIMIT 1`,
@@ -82,8 +85,8 @@ exports.hasPersonalDb = async (userId) => {
     );
   } catch (error) {
     if (!isMissingPersonalDbSchemaError(error)) throw error;
-    console.warn("[personal-db] migration 004/005 schema is unavailable; using the central database.");
-    return false;
+    const user = await db.central.prepare("SELECT has_personal_db FROM users WHERE id = ? LIMIT 1").get(userId);
+    return user?.has_personal_db === true || user?.has_personal_db === 1;
   }
 };
 exports.upsertConfig = async (values) => {
@@ -108,9 +111,9 @@ exports.upsertConfig = async (values) => {
   const maskedPassword = mask(password);
   const encryptedAnon = anonKey ? encrypt(anonKey) : null;
   const maskedAnon = anonKey ? mask(anonKey) : null;
-  const existing = await db.prepare("SELECT id FROM user_supabase_configs WHERE user_id = ? LIMIT 1").get(userId);
+  const existing = await db.central.prepare("SELECT id FROM user_supabase_configs WHERE user_id = ? LIMIT 1").get(userId);
   if (existing) {
-    await db.prepare(
+    await db.central.prepare(
       `UPDATE user_supabase_configs
        SET connection_host = ?, connection_port = ?, connection_database = ?, connection_username = ?,
            encrypted_password = ?, password_masked = ?, ssl_mode = ?,
@@ -127,7 +130,7 @@ exports.upsertConfig = async (values) => {
       status, userId
     );
   } else {
-    await db.prepare(
+    await db.central.prepare(
       `INSERT INTO user_supabase_configs
         (user_id, connection_host, connection_port, connection_database, connection_username,
          encrypted_password, password_masked, ssl_mode, project_url, project_name,
@@ -140,11 +143,11 @@ exports.upsertConfig = async (values) => {
     );
   }
   if (schemaOk === true) {
-    await db.prepare("UPDATE users SET has_personal_db = TRUE WHERE id = ?").run(userId);
+    await db.central.prepare("UPDATE users SET has_personal_db = TRUE WHERE id = ?").run(userId);
   } else {
-    await db.prepare("UPDATE users SET has_personal_db = FALSE WHERE id = ?").run(userId);
+    await db.central.prepare("UPDATE users SET has_personal_db = FALSE WHERE id = ?").run(userId);
   }
-  await db.prepare(
+  await db.central.prepare(
     `UPDATE user_supabase_configs SET schema_ok = ?, schema_checked = TRUE, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?`
   ).run(schemaOk ? 1 : 0, userId);
   return exports.getPublicConfigByUserId(userId);
@@ -158,25 +161,30 @@ exports.updateStatus = async (userId, status, testError = null, schemaChecked = 
   if (schemaChecked !== null) { fields.push("schema_checked = ?"); params.push(schemaChecked); }
   if (schemaOk !== null) { fields.push("schema_ok = ?"); params.push(schemaOk); }
   params.push(userId);
-  await db.prepare(`UPDATE user_supabase_configs SET ${fields.join(", ")} WHERE user_id = ?`).run(...params);
-  if (schemaOk === true) await db.prepare("UPDATE users SET has_personal_db = TRUE WHERE id = ?").run(userId);
-  else if (schemaOk === false) await db.prepare("UPDATE users SET has_personal_db = FALSE WHERE id = ?").run(userId);
+  await db.central.prepare(`UPDATE user_supabase_configs SET ${fields.join(", ")} WHERE user_id = ?`).run(...params);
+  if (schemaOk === true) await db.central.prepare("UPDATE users SET has_personal_db = TRUE WHERE id = ?").run(userId);
+  else if (schemaOk === false) await db.central.prepare("UPDATE users SET has_personal_db = FALSE WHERE id = ?").run(userId);
   return exports.getPublicConfigByUserId(userId);
 };
+exports.recordKeepalive = async (userId, ok, category = null) => {
+  await db.central.prepare(
+    "UPDATE user_supabase_configs SET last_keepalive_at = CURRENT_TIMESTAMP, last_keepalive_ok = ?, last_keepalive_error = ? WHERE user_id = ?"
+  ).run(ok ? 1 : 0, ok ? null : category, userId);
+};
 exports.removeConfig = async (userId) => {
-  await db.prepare("DELETE FROM user_supabase_configs WHERE user_id = ?").run(userId);
-  await db.prepare("UPDATE users SET has_personal_db = FALSE WHERE id = ?").run(userId);
+  await db.central.prepare("DELETE FROM user_supabase_configs WHERE user_id = ?").run(userId);
+  await db.central.prepare("UPDATE users SET has_personal_db = FALSE WHERE id = ?").run(userId);
   return { ok: true };
 };
 /** Store initialization for personal databases. */
 exports.getPersonalStoreId = async (userId) => {
-  const row = await db.prepare(
+  const row = await db.central.prepare(
     "SELECT personal_store_id FROM users WHERE id = ? LIMIT 1"
   ).get(userId);
   return row ? row.personal_store_id : null;
 };
 exports.setPersonalStoreId = async (userId, storeId) => {
-  await db.prepare(
+  await db.central.prepare(
     "UPDATE users SET personal_store_id = ? WHERE id = ?"
   ).run(storeId, userId);
   return storeId;

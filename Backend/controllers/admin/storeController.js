@@ -42,7 +42,7 @@ exports.getStores = async (req, res) => {
     sql += ` LIMIT ? OFFSET ?`;
     params.push(limitNum, offset);
 
-    const rows = db.prepare(sql).all(...params);
+    const rows = db.central.prepare(sql).all(...params);
     const countResult = db.exec(
       `SELECT COUNT(*) as c FROM stores${conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : ""}`,
       ...conditions.length > 0 ? params.slice(0, -2) : []
@@ -88,7 +88,7 @@ exports.getStoreById = async (req, res) => {
       return sendError(res, "Invalid store ID", 400);
     }
 
-    const storeResult = db.prepare(
+    const storeResult = db.central.prepare(
       "SELECT id, name, slug, status, plan, subscription_status, subscription_start, subscription_end, trial_start, trial_end, license_type, license_active, created_at, last_activity_at FROM stores WHERE id = ?"
     ).get(storeId);
 
@@ -96,27 +96,27 @@ exports.getStoreById = async (req, res) => {
       return sendError(res, "Store not found", 404);
     }
 
-    const ownerResult = db.prepare(
+    const ownerResult = db.central.prepare(
       "SELECT id, name, email, role, created_at FROM users WHERE store_id = ? AND role = 'owner'"
     ).get(storeId);
 
-    const customerCount = db.prepare(
+    const customerCount = db.central.prepare(
       "SELECT COUNT(*) as c FROM customers WHERE store_id = ? AND is_deleted = 0"
     ).get(storeId)?.c || 0;
 
-    const orderCount = db.prepare(
+    const orderCount = db.central.prepare(
       "SELECT COUNT(*) as c FROM orders WHERE store_id = ? AND is_deleted = 0"
     ).get(storeId)?.c || 0;
 
-    const measurementCount = db.prepare(
+    const measurementCount = db.central.prepare(
       "SELECT COUNT(*) as c FROM measurements WHERE store_id = ? AND is_deleted = 0"
     ).get(storeId)?.c || 0;
 
-    const userCount = db.prepare(
+    const userCount = db.central.prepare(
       "SELECT COUNT(*) as c FROM users WHERE store_id = ?"
     ).get(storeId)?.c || 0;
 
-    const apiKeyCountResult = db.prepare(
+    const apiKeyCountResult = db.central.prepare(
       "SELECT COUNT(*) as c FROM api_keys WHERE store_id = ? AND is_active = 1"
     ).get(storeId);
     const activeApiKeyCount = apiKeyCountResult?.c || 0;
@@ -177,12 +177,12 @@ exports.updateStoreStatus = async (req, res) => {
       return sendError(res, "Valid status required (active, suspended, disabled)", 400);
     }
 
-    const existing = db.prepare("SELECT id, name FROM stores WHERE id = ?").get(storeId);
+    const existing = db.central.prepare("SELECT id, name FROM stores WHERE id = ?").get(storeId);
     if (!existing) {
       return sendError(res, "Store not found", 404);
     }
 
-    db.prepare("UPDATE stores SET status = ?, last_activity_at = ? WHERE id = ?").run(status, new Date().toISOString(), storeId);
+    db.central.prepare("UPDATE stores SET status = ?, last_activity_at = ? WHERE id = ?").run(status, new Date().toISOString(), storeId);
     db.save();
 
     log(storeId, req.admin.id, "store_status_change", "store", storeId, existing.name, `Status changed to ${status}`, ip);

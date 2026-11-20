@@ -817,11 +817,19 @@ export default function Orders() {
       <option value="coat">Coat</option>
             </select>
           </label>
-          <label>
-            Suit Quantity
-            <input type="number" min="1" step="1" required value={formData.suit_quantity}
-              onChange={(e) => handleOrderInput("suit_quantity", e.target.value)} />
-          </label>
+          <div className="order-field-pair">
+            <label>
+              Suit Quantity
+              <input type="number" min="1" step="1" required value={formData.suit_quantity}
+                onChange={(e) => handleOrderInput("suit_quantity", e.target.value)} />
+            </label>
+            <label>
+              Delivery Date
+              <input type="date" value={formData.delivery_date}
+                onChange={(e) => handleOrderInput("delivery_date", e.target.value)} required />
+            </label>
+          </div>
+          <div className="order-field-pair">
           <label>
             Price
             <input
@@ -840,17 +848,7 @@ export default function Orders() {
               required
             />
           </label>
-          <label>
-            Delivery Date
-            <input
-              type="date"
-              value={formData.delivery_date}
-              onChange={(e) =>
-                handleOrderInput("delivery_date", e.target.value)
-              }
-              required
-            />
-          </label>
+          </div>
           <button
             type="button"
             className="button primary"

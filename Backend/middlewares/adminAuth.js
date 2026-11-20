@@ -31,7 +31,7 @@ async function authenticateAdmin(req, res, next) {
       return sendError(res, "Invalid admin token", 401);
     }
 
-    const session = db.prepare(
+    const session = db.central.prepare(
       "SELECT id FROM admin_sessions WHERE token = ? AND expires_at > ?"
     ).get(token, new Date().toISOString());
 
@@ -39,7 +39,7 @@ async function authenticateAdmin(req, res, next) {
       return sendError(res, "Admin session expired or invalid", 401);
     }
 
-    const admin = db.prepare(
+    const admin = db.central.prepare(
       "SELECT id, email, name, role, is_active FROM admin_users WHERE id = ? AND is_active = 1"
     ).get(decoded.adminId);
 

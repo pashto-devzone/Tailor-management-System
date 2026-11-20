@@ -6,6 +6,7 @@ const { authenticate } = require("../middlewares/auth");
 router.get("/", authenticate, controller.getConfig);
 router.post("/", authenticate, controller.saveConfig);
 router.post("/test", authenticate, controller.testConnection);
+router.post("/reconnect", authenticate, controller.reconnect);
 router.delete("/", authenticate, controller.disconnect);
 
 module.exports = router;

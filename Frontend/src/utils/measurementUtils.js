@@ -107,34 +107,6 @@ const repairMojibake = (value) => {
   }
 };
 
-const freeTextFields = new Set([
-  "comment",
-  "comments",
-  "cuff_extra",
-  "cuff_motai_comment",
-  "design_comment",
-  "extra",
-  "extra_style_design",
-  "front_details",
-  "measurement_notes",
-  "name",
-  "notes",
-  "side_details",
-  "whatsapp_name",
-  "whatsapp_number",
-]);
-
-const repairMojibakeDeep = (value, key, preserveText = false) => {
-  if (typeof value === "string") return preserveText || freeTextFields.has(key) ? value : repairMojibake(value);
-  if (Array.isArray(value)) return value.map((item) => repairMojibakeDeep(item, key, preserveText));
-  if (!value || typeof value !== "object") return value;
-  const preserveChildren = preserveText || key === "additional_comments";
-  return Object.fromEntries(Object.entries(value).map(([childKey, item]) => [
-    childKey,
-    repairMojibakeDeep(item, childKey, preserveChildren),
-  ]));
-};
-
 const clearInvalidDependentValues = (details) => {
   const cleaned = {
     ...details,
@@ -347,7 +319,7 @@ export const normalizeMeasurementData = (source) => {
 
 merged.coat_farmaish = source.coat_farmaish ?? source.measurement_details?.coat_farmaish ?? defaultMeasurementDetails.coat_farmaish;
     merged.waistcoat_farmaish = source.waistcoat_farmaish ?? source.measurement_details?.waistcoat_farmaish ?? defaultMeasurementDetails.waistcoat_farmaish;
-    return clearInvalidDependentValues(repairMojibakeDeep(merged));
+    return clearInvalidDependentValues(merged);
   }
 
   // Detect if source is already new-format measurement_details
@@ -402,7 +374,7 @@ merged.coat_farmaish = source.coat_farmaish ?? source.measurement_details?.coat_
       ...(merged.additional_comments || {}),
     };
 
-    return clearInvalidDependentValues(repairMojibakeDeep(merged));
+    return clearInvalidDependentValues(merged);
   }
 
   // Legacy records
@@ -432,7 +404,7 @@ merged.coat_farmaish = source.coat_farmaish ?? source.measurement_details?.coat_
   merged.patai.design_comment = merged.patai.design_comment || "";
   merged.kareegar = { name: merged.kareegar?.name || "" };
 
-  return clearInvalidDependentValues(repairMojibakeDeep(merged));
+  return clearInvalidDependentValues(merged);
 };
 
 // Older exports may contain UTF-8 bytes decoded as Windows-1252. Keep the
@@ -494,9 +466,12 @@ export const measurementListFields = [
 export const getMeasurementLabel = (key) => repairMojibake(measurementLabelMap[key] || key);
 
 export const cleanPrintMeasurementValue = (value) =>
-  String(value ?? "")
-    .replace(/([\d/۰-۹٠-٩])\s*(?:انچ|in(?:ches?)?)(?=$|[\s.,;:/)])/giu, "$1")
-    .trim();
+  (() => {
+    const text = String(value ?? "");
+    // Comment and free-text fields (including Urdu) are opaque print content.
+    if (/[^\d\s./۰-۹٠-٩+-]/u.test(text.replace(/(?:انچ|in(?:ches?)?)/giu, ""))) return text;
+    return text.replace(/([\d/۰-۹٠-٩])\s*(?:انچ|in(?:ches?)?)(?=$|[\s.,;:/)])/giu, "$1").trim();
+  })();
 
 export const formatMeasurementList = (details) =>
   measurementListFields.map((key) => ({ label: measurementLabelMap[key], value: details.measurements[key] || "-" }));
@@ -737,6 +712,7 @@ export const getFarmaishRows = (details) => {
     }
   };
   appendComment(d.additional_comments?.daman, ["Ø¯Ø§Ù…Ù†", "دامن"], "Ø¯Ø§Ù…Ù†");
+  appendComment(d.additional_comments?.other, [], "\u062e\u0635\u0648\u0635\u06cc \u06c1\u062f\u0627\u06cc\u0627\u062a");
 
   return rows;
 };

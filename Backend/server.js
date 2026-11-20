@@ -88,7 +88,7 @@ app.get("/", (req, res) => {
   res.json({
     success: true,
     message: "Tailor Shop Management API is running",
-    data: { version: "1.6.4" },
+      data: { version: "1.6.7" },
   });
 });
 
@@ -97,7 +97,8 @@ app.get("/", (req, res) => {
  * slow or unreachable Supabase never stops the phone from connecting; /health
  * simply reports the real state instead of the app guessing from a failure.
  */
-let databaseState = "initializing";
+let databaseState = "connecting";
+let databaseReason = null;
 
 app.get("/health", (req, res) => {
   res.json({
@@ -106,6 +107,7 @@ app.get("/health", (req, res) => {
     data: {
       timestamp: new Date().toISOString(),
       database: databaseState,
+      reason: databaseReason,
       localDatabase: databaseState === "ready" ? "ready" : databaseState,
       cloudDatabase: db.cloudOnline ? "online" : "offline",
     },
@@ -256,24 +258,36 @@ function startHttpServer() {
 
 async function startServer() {
   const server = startHttpServer();
-
-  try {
-    await db.initialize();
-    databaseState = "ready";
-    console.log("Database initialized successfully");
-  } catch (err) {
-    databaseState = "failed";
-    console.error("\n[ fatal ] The database failed to initialize, so API requests that");
-    console.error("           need data will return errors. The HTTP server is still");
-    console.error("           reachable so clients and monitoring can report this clearly.");
-    console.error(`           Reason: ${redact(err.message)}\n`);
-
-    if (isProduction) {
-      // A production deployment must never serve traffic against a database it
-      // cannot reach; the platform should restart it once the DB is available.
-      server.close(() => process.exit(1));
+  const categorize = (err) => {
+    const code = String(err?.code || "");
+    const message = String(err?.message || "");
+    if (/ENOTFOUND|EAI_AGAIN|ENETUNREACH/.test(code)) return "dns_or_network";
+    if (/ECONNREFUSED|ETIMEDOUT|ECONNRESET/.test(code)) return "database_unreachable";
+    if (/28P01|password authentication/i.test(`${code} ${message}`)) return "credentials";
+    if (/ssl|certificate|tls/i.test(message)) return "ssl";
+    return "database_initialization";
+  };
+  const initializeUntilReady = async () => {
+    let delay = 2000;
+    while (true) {
+      try {
+        databaseState = "connecting";
+        await db.initialize();
+        databaseState = "ready";
+        databaseReason = null;
+        console.log("[database] state=ready");
+        require("./services/personalDbKeepalive").start();
+        return;
+      } catch (err) {
+        databaseState = "connecting";
+        databaseReason = categorize(err);
+        console.error(`[database] initialization retry (${databaseReason}, ${err.code || "no_code"}): ${redact(err.message)}`);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        delay = Math.min(delay * 2, 30_000);
+      }
     }
-  }
+  };
+  initializeUntilReady().catch((err) => console.error("[database] recovery loop stopped:", redact(err.message)));
 
   /**
    * Graceful shutdown. Hosting platforms send SIGTERM before recycling a
@@ -283,6 +297,7 @@ async function startServer() {
   const shutdown = (signal) => {
     console.log(`[server] ${signal} received, shutting down gracefully`);
     server.close(async () => {
+      require("./services/personalDbKeepalive").stop();
       await db.close().catch(() => {});
       process.exit(0);
     });

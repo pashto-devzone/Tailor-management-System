@@ -24,6 +24,7 @@ const LENGTH_KEYS = [
   "innerPadding",
   "borderWidth",
   "rowSpacing",
+  "tableGapMm",
 ];
 
 const round4 = (n) => Math.round(n * 10000) / 10000;
@@ -85,6 +86,12 @@ export default function PrintSettingsSection() {
         if (stored.valueFontSize == null && stored.tableFontSize != null) {
           saved.valueFontSize = stored.tableFontSize;
         }
+        if (stored.measurementLabelColumnWidth == null && stored.labelColumnWidth != null) {
+          saved.measurementLabelColumnWidth = stored.labelColumnWidth;
+        }
+        if (stored.farmaishLabelColumnWidth == null && stored.labelColumnWidth != null) {
+          saved.farmaishLabelColumnWidth = stored.labelColumnWidth;
+        }
         setRaw(rawFromCanonical({ ...DEFAULT_PRINT_SETTINGS, ...saved }));
       })
       .catch((err) => {
@@ -119,8 +126,8 @@ export default function PrintSettingsSection() {
     setMessage("");
     setError("");
     if (errors.length) {
-      setError(errors.join("\n"));
-      return;
+      setRaw(rawFromCanonical(normalized));
+      setError(`Settings were corrected to safe values: ${errors.join(" ")}`);
     }
     setSaving(true);
     try {
@@ -138,6 +145,7 @@ export default function PrintSettingsSection() {
         );
       } else {
         setRaw(rawFromCanonical({ ...DEFAULT_PRINT_SETTINGS, ...(saved.data?.printSettings || payload.printSettings) }));
+        setError("");
         setMessage("Print settings saved. The measurement preview and printed slip now use them.");
       }
     } catch (err) {
@@ -274,9 +282,14 @@ export default function PrintSettingsSection() {
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {numberInput("lineHeightScale", "Line-height scale (%)", 70, 160)}
               {numberInput("bodyColumnWidth", "Measurements section width (%)", 30, 70, 0.1)}
-              {numberInput("labelColumnWidth", "Measurement label column (%)", 25, 75, 0.1)}
-              {numberInput("metadataColumns", "Header information columns", 1, 6)}
+              {numberInput("measurementLabelColumnWidth", "Measurement label column (%)", 15, 70, 0.1)}
+              <p className="print-column-width-summary">Measurement value column: {round2(100 - normalized.measurementLabelColumnWidth)}%</p>
+              {numberInput("farmaishLabelColumnWidth", "Farmaish label column (%)", 15, 70, 0.1)}
+              <p className="print-column-width-summary">Farmaish value column: {round2(100 - normalized.farmaishLabelColumnWidth)}%</p>
+              {lengthInput("tableGapMm", "Gap between tables")}
             </div>
+
+            {errors.length ? <p className="print-settings-range-hint" role="alert">Values outside the allowed ranges are shown below and must be corrected before saving.</p> : null}
 
             {errors.length ? (
               <div className="message error" style={{ whiteSpace: "pre-line" }}>
@@ -311,7 +324,7 @@ export default function PrintSettingsSection() {
                 type="button"
                 className="button primary"
                 onClick={handleSave}
-                disabled={saving || errors.length > 0}
+                disabled={saving}
               >
                 {saving ? "Saving..." : "Save Print Settings"}
               </button>

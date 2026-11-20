@@ -30,7 +30,7 @@ exports.getUsers = async (req, res) => {
     sql += " ORDER BY u.created_at DESC LIMIT ? OFFSET ?";
     params.push(limitNum, offset);
 
-    const rows = db.prepare(sql).all(...params);
+    const rows = db.central.prepare(sql).all(...params);
 
     const countSql = "SELECT COUNT(*) as c FROM users u LEFT JOIN stores s ON u.store_id = s.id" + (conditions.length > 0 ? " WHERE " + conditions.join(" AND ") : "");
     const countResult = db.exec(countSql, ...conditions.length > 0 ? params.slice(0, -2) : []);
@@ -69,7 +69,7 @@ exports.getUserById = async (req, res) => {
       return sendError(res, "Invalid user ID", 400);
     }
 
-    const user = db.prepare(
+    const user = db.central.prepare(
       "SELECT u.id, u.name, u.email, u.role, u.store_id, u.created_at, u.updated_at, s.name as store_name, s.status as store_status FROM users u LEFT JOIN stores s ON u.store_id = s.id WHERE u.id = ?"
     ).get(userId);
 

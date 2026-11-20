@@ -72,8 +72,10 @@ function buildPoolConfig(config) {
     database: config.database,
     user: config.username,
     password: config.password,
-    connectionTimeoutMillis: Number(process.env.PGCONNECT_TIMEOUT_MS || 5000),
-    max: 2,
+    connectionTimeoutMillis: Number(process.env.PGCONNECT_TIMEOUT_MS || 10000),
+    keepAlive: true,
+    idleTimeoutMillis: 10000,
+    max: 3,
   };
   const ssl = sslOption(config.sslMode || "no-verify");
   if (ssl !== false) cfg.ssl = ssl;
@@ -91,7 +93,10 @@ function getPool(config, userId) {
   if (cached && cached.signature === signature && cached.password === config.password) return cached.pool;
   if (cached) cached.pool.end().catch(() => {});
   const pool = new Pool(buildPoolConfig(config));
-  pool.on("error", (err) => { console.error("[personal-db] pool error:", safeError(err)); });
+  pool.on("error", (err) => {
+    console.error("[personal-db] pool error:", safeError(err));
+    if (poolCache.get(uid)?.pool === pool) invalidateCache(uid);
+  });
   poolCache.set(uid, { pool, signature, password: config.password });
   return pool;
 }
@@ -111,11 +116,26 @@ function safeError(err) {
 function categorizeError(err) {
   const code = err?.code || "";
   const message = err?.message || "";
+  const known = {
+    auth_failed: { status: 401, code: "auth_failed", message: "Authentication failed. Check username and password." },
+    pooler_target_not_found: { status: 503, code: "pooler_target_not_found", message: "Supabase could not find this project through the selected pooler. Check the project region and pooler host." },
+    dns_or_network: { status: 503, code: "dns_or_network", message: "The network or DNS could not reach Supabase. Check your internet connection and try again." },
+    project_unavailable: { status: 503, code: "project_unavailable", message: "Your Supabase project may be paused or still waking up. Open Supabase and press Restore, then wait a few minutes." },
+    ssl_failed: { status: 422, code: "ssl_failed", message: "SSL configuration failed. Adjust SSL mode and retry." },
+    schema_missing: { status: 503, code: "schema_missing", message: "The database schema is incomplete. Reconnect your Supabase project in Settings." },
+  };
+  if (known[code]) return known[code];
   if (code === "28P01" || /password authentication failed/i.test(message)) {
     return { status: 401, code: "auth_failed", message: "Authentication failed. Check username and password." };
   }
-  if (code === "ENOTFOUND" || code === "ECONNREFUSED" || code === "ETIMEDOUT" || /could not connect|connection refused|timeout|ENOTFOUND|ECONNREFUSED|ETIMEDOUT/i.test(message)) {
-    return { status: 503, code: "unreachable", message: "Unable to reach the Session Pooler. Check host and port." };
+  if (/tenant or user not found/i.test(message) || code === "XX000") {
+    return { status: 503, code: "pooler_target_not_found", message: "Supabase could not find this project through the selected pooler. Check the project region and pooler host." };
+  }
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN" || code === "ENETUNREACH") {
+    return { status: 503, code: "dns_or_network", message: "The network or DNS could not reach Supabase. Check your internet connection and try again." };
+  }
+  if (code === "ECONNREFUSED" || code === "ETIMEDOUT" || code === "ECONNRESET" || code === "57P01" || /could not connect|connection refused|timeout|connection terminated|terminating connection/i.test(message)) {
+    return { status: 503, code: "project_unavailable", message: "Your Supabase project may be paused or still waking up. Open Supabase and press Restore, then wait a few minutes." };
   }
   if (/ssl|certificate|TLS/i.test(message)) {
     return { status: 422, code: "ssl_failed", message: "SSL configuration failed. Adjust SSL mode and retry." };
@@ -123,7 +143,8 @@ function categorizeError(err) {
   if (code === "3D000" || /database .* does not exist/i.test(message)) {
     return { status: 404, code: "db_not_found", message: "Database does not exist. Check database name." };
   }
-  return { status: 502, code: "personal_db_error", message: safeError(err) };
+  if (code === "42P01" || code === "42703") return { status: 503, code: "schema_missing", message: "The database schema is incomplete. Reconnect your Supabase project in Settings." };
+  return { status: 503, code: "personal_db_error", message: "Your Supabase database could not complete the request. Check the connection settings and retry." };
 }
 
 const REQUIRED_TABLES = ["stores", "customers", "orders", "measurements", "employees", "expenses", "income", "salaries", "shop", "settings"];
@@ -138,13 +159,19 @@ async function schemaStatus(pool) {
 }
 
 async function initializeSchema(pool) {
-  const files = ["001_initial.sql", "002_garment_measurements_and_suit_quantity.sql", "003_print_settings.sql"];
+  const files = ["001_initial.sql", "002_garment_measurements_and_suit_quantity.sql", "003_print_settings.sql", "006_personal_db_keepalive.sql"];
   for (const f of files) {
     const full = path.join(__dirname, "..", "migrations", f);
     if (!fs.existsSync(full)) continue;
     const sql = fs.readFileSync(full, "utf8");
     await pool.query(sql);
   }
+}
+
+async function pingPersonalDatabase(pool) {
+  await pool.query("SELECT now()");
+  await pool.query("CREATE TABLE IF NOT EXISTS keepalive_ping (id INTEGER PRIMARY KEY, pinged_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP)");
+  await pool.query("INSERT INTO keepalive_ping (id, pinged_at) VALUES (1, now()) ON CONFLICT (id) DO UPDATE SET pinged_at = EXCLUDED.pinged_at");
 }
 
 async function testConnection(configInput) {
@@ -223,6 +250,7 @@ module.exports = {
   invalidateCache,
   testConnection,
   initializeSchema,
+  pingPersonalDatabase,
   schemaStatus,
   safeError,
   categorizeError,

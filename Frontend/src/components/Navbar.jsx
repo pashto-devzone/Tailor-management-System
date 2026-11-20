@@ -1,53 +1,39 @@
+import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { useState } from "react";
-import { FaHome, FaUsers, FaClipboardList, FaRuler, FaChartBar, FaCog } from "react-icons/fa";
+import { FaHome, FaUsers, FaClipboardList, FaRuler, FaChartBar, FaCog, FaCut, FaSignOutAlt, FaChevronLeft, FaChevronRight } from "react-icons/fa";
+import { appInfo } from "../constants/appInfo.js";
 
-export default function Navbar() {
-  const [menuOpen, setMenuOpen] = useState(false);
-
-  const closeMenu = () => setMenuOpen(false);
-
+export default function Navbar({ user, onLogout }) {
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tms_sidebar_collapsed");
+      return saved == null ? window.innerWidth < 1000 : saved === "true";
+    } catch { return window.innerWidth < 1000; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("tms_sidebar_collapsed", String(collapsed)); } catch {}
+  }, [collapsed]);
+  const name = user?.user?.name || user?.user?.full_name || user?.user?.email || "Shop Owner";
+  const links = [
+    ["/dashboard", "Dashboard", FaHome], ["/customers", "Customers", FaUsers],
+    ["/orders", "Orders", FaClipboardList], ["/measurements", "Measurements", FaRuler],
+    ["/budget", "Budget", FaChartBar], ["/settings", "Settings", FaCog],
+  ];
   return (
-    <header className="navbar sticky-navbar">
-      <div className="brand">
-        <div className="brand-icon">✂️</div>
-        <div>
-          <h1>Tailor Hub</h1>
-          <p>Customer / Measurement / Order dashboard</p>
-        </div>
+    <aside className={`app-sidebar${collapsed ? " is-collapsed" : ""}`}>
+      <div className="sidebar-brand-row">
+        <div className="brand-icon"><FaCut /></div>
+        {!collapsed && <div className="sidebar-brand"><strong>Tailor Hub</strong><span>Shop Manager</span></div>}
+        <button type="button" className="sidebar-toggle" aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"} aria-expanded={!collapsed} title={collapsed ? "Expand sidebar" : "Collapse sidebar"} onClick={() => setCollapsed((value) => !value)}>{collapsed ? <FaChevronRight /> : <FaChevronLeft />}</button>
       </div>
-
-      <button
-        type="button"
-        className="mobile-menu-button"
-        aria-expanded={menuOpen}
-        aria-controls="store-navigation"
-        onClick={() => setMenuOpen((open) => !open)}
-      >
-        <span aria-hidden="true">{menuOpen ? "✕" : "☰"}</span>
-        <span>{menuOpen ? "Close menu" : "Open menu"}</span>
-      </button>
-
-      <nav id="store-navigation" className={`nav-links ${menuOpen ? "open" : ""}`}>
-        <NavLink to="/dashboard" onClick={closeMenu} className={({ isActive }) => (isActive ? "active" : "")}>
-          <FaHome /> Dashboard
-        </NavLink>
-        <NavLink to="/customers" onClick={closeMenu} className={({ isActive }) => (isActive ? "active" : "")}>
-          <FaUsers /> Customers
-        </NavLink>
-        <NavLink to="/orders" onClick={closeMenu} className={({ isActive }) => (isActive ? "active" : "")}>
-          <FaClipboardList /> Orders
-        </NavLink>
-        <NavLink to="/measurements" onClick={closeMenu} className={({ isActive }) => (isActive ? "active" : "")}>
-          <FaRuler /> Measurements
-        </NavLink>
-        <NavLink to="/budget" onClick={closeMenu} className={({ isActive }) => (isActive ? "active" : "")}>
-          <FaChartBar /> Budget
-        </NavLink>
-        <NavLink to="/settings" onClick={closeMenu} className={({ isActive }) => (isActive ? "active" : "")}>
-          <FaCog /> Settings
-        </NavLink>
+      <nav className="sidebar-nav" aria-label="Main navigation">
+        {links.map(([to, label, Icon]) => <NavLink key={to} to={to} title={collapsed ? label : undefined} aria-label={collapsed ? label : undefined} className={({ isActive }) => isActive ? "active" : ""}><Icon /><span>{label}</span></NavLink>)}
       </nav>
-    </header>
+      <div className="sidebar-account">
+        <div className="sidebar-avatar" title={name}>{String(name).trim().charAt(0).toUpperCase()}</div>
+        {!collapsed && <div className="sidebar-account-copy"><strong>{name}</strong><span>v{appInfo.version} · Owner</span></div>}
+        <button type="button" className="sidebar-logout" title="Logout" aria-label="Logout" onClick={onLogout}><FaSignOutAlt /></button>
+      </div>
+    </aside>
   );
 }

@@ -10,13 +10,14 @@ import {
   saveUserSupabaseConfig,
   testSupabaseConnection,
   disconnectUserSupabase,
+  reconnectUserSupabase,
 } from "../services/api";
 import RecycleBinSection from "./RecycleBinSection";
 import ProfessionalFooter from "../components/ProfessionalFooter.jsx";
 import PrintSettingsSection from "../components/PrintSettingsSection.jsx";
 import { useShop } from "../contexts/ShopContext";
 import { useAuth } from "../contexts/AuthContext";
-import { FaSignOutAlt } from "react-icons/fa";
+import { FaSignOutAlt, FaSyncAlt } from "react-icons/fa";
 import { FaChevronDown } from "react-icons/fa";
 import { FaDatabase } from "react-icons/fa";
 import { changePassword } from "../services/api";
@@ -54,6 +55,23 @@ export default function Settings() {
 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const [updateState, setUpdateState] = useState("idle");
+  const [updateVersion, setUpdateVersion] = useState("");
+  const [updateProgress, setUpdateProgress] = useState(0);
+
+  useEffect(() => {
+    const update = window.electronAPI?.update;
+    if (!update) return;
+    const off = [
+      update.onChecking?.(() => setUpdateState("checking")),
+      update.onNotAvailable?.((data) => { setUpdateVersion(data?.currentVersion || ""); setUpdateState("current"); }),
+      update.onAvailable?.((data) => { setUpdateVersion(data?.latestVersion || ""); setUpdateProgress(0); setUpdateState("downloading"); }),
+      update.onDownloadProgress?.((data) => { setUpdateVersion(data?.latestVersion || ""); setUpdateProgress(Math.floor(data?.percent || 0)); setUpdateState("downloading"); }),
+      update.onDownloaded?.((data) => { setUpdateVersion(data?.latestVersion || ""); setUpdateState("ready"); }),
+      update.onError?.((data) => { setError(data?.message || "Could not check for updates. Please check your internet connection."); setUpdateState("error"); }),
+    ].filter(Boolean);
+    return () => off.forEach((unsubscribe) => unsubscribe());
+  }, []);
 
   const [backupMessage, setBackupMessage] = useState("");
   const [backupError, setBackupError] = useState("");
@@ -76,6 +94,7 @@ export default function Settings() {
   const [supabaseMessage, setSupabaseMessage] = useState("");
   const [supabaseError, setSupabaseError] = useState("");
   const [supabaseOpen, setSupabaseOpen] = useState(false);
+  const [reconnectingSupabase, setReconnectingSupabase] = useState(false);
   const [connString, setConnString] = useState("");
   const [connHost, setConnHost] = useState("");
   const [connPort, setConnPort] = useState("5432");
@@ -204,6 +223,20 @@ export default function Settings() {
       setSupabaseError(err?.friendlyMessage || "Failed to disconnect.");
     } finally {
       setSupabaseLoading(false);
+    }
+  };
+
+  const handleReconnectSupabase = async () => {
+    setReconnectingSupabase(true);
+    setSupabaseError("");
+    try {
+      const res = await reconnectUserSupabase();
+      setSupabaseMessage(res.data?.message || "Supabase connection restored.");
+      window.location.reload();
+    } catch (err) {
+      setSupabaseError(err?.friendlyMessage || "Supabase is still unavailable. Try again shortly.");
+    } finally {
+      setReconnectingSupabase(false);
     }
   };
 
@@ -341,24 +374,19 @@ export default function Settings() {
           <h2>Settings</h2>
           <p>Shop information and backup/restore.</p>
         </div>
+        <button type="button" className="button secondary settings-update-button" disabled={updateState === "checking"} onClick={async () => {
+          setError("");
+          setUpdateState("checking");
+          try {
+            const result = await window.electronAPI?.update?.check?.();
+            if (result?.ok === false) { setError(result.message || "Could not check for updates. Please check your internet connection."); setUpdateState("error"); }
+          } catch (_) { setError("Could not check for updates. Please check your internet connection."); setUpdateState("error"); }
+        }}><FaSyncAlt /> {updateState === "checking" ? "Checking…" : updateState === "current" ? `You are up to date (${updateVersion})` : updateState === "downloading" ? `Update available · Downloading ${updateProgress}%` : updateState === "ready" ? "Ready to install" : "Check for Updates"}</button>
       </div>
 
       <div className="message-row">
         {message && <p className="message success">{message}</p>}
         {error && <p className="message error">{error}</p>}
-      </div>
-
-      <div style={{ marginBottom: 12 }}>
-        <button type="button" className="button secondary small" onClick={async () => {
-          setError("");
-          try {
-            await window.electronAPI?.update?.check?.();
-          } catch (e) {
-            setError(e?.message || "Update check failed");
-          }
-        }}>
-          Check for Updates
-        </button>
       </div>
 
       <div className="settings-grid">
@@ -369,7 +397,7 @@ export default function Settings() {
             <FaChevronDown className={`collapsible-icon ${shopInfoOpen ? "open" : ""}`} />
           </div>
           <div className={`collapsible-body ${shopInfoOpen ? "" : "collapsed"}`}>
-            <form onSubmit={handleSubmit}>
+            <form className="shop-info-form" onSubmit={handleSubmit}>
               <label>
                 Shop Name
                 <input
@@ -396,9 +424,9 @@ export default function Settings() {
                 />
               </label>
 
-              <label>
+              <label className="shop-address-field">
                 Address
-                <textarea
+                <textarea rows={3}
                   value={form.address}
                   onChange={(e) => handleChange("address", e.target.value)}
                   required
@@ -441,7 +469,7 @@ export default function Settings() {
                 />
               </label>
 
-              <div className="modal-actions">
+                <div className="modal-actions shop-save-actions">
                 <button type="submit" className="button primary" disabled={saving}>
 
                   {saving ? "Saving..." : "Save Settings"}
@@ -625,6 +653,7 @@ export default function Settings() {
                   </div>
                 )}
                 <div style={{ display: "flex", gap: 8 }}>
+                  <button type="button" className="button secondary" onClick={handleReconnectSupabase} disabled={reconnectingSupabase || supabaseLoading}>{reconnectingSupabase ? "Retrying..." : "Retry connection"}</button>
                   <button type="button" className="button secondary" onClick={handleTestSupabaseConnection} disabled={testingConnection || supabaseLoading}>
                     {testingConnection ? "Testing..." : "Test Connection"}
                   </button>
@@ -632,6 +661,10 @@ export default function Settings() {
                     {supabaseLoading ? "..." : "Disconnect Project"}
                   </button>
                 </div>
+                <p style={{ margin: "4px 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+                  Connection status: {supabaseConfig.config.last_keepalive_ok === false ? `Needs attention (${supabaseConfig.config.last_keepalive_error || "unreachable"})` : "Configured"}
+                  <br />Last keep-alive: {supabaseConfig.config.last_keepalive_at ? new Date(supabaseConfig.config.last_keepalive_at).toLocaleString() : "Not yet recorded"}
+                </p>
                 {supabaseError && <p className="message error" style={{ marginTop: 8, fontSize: "0.85rem" }}>{supabaseError}</p>}
                 {supabaseMessage && <p className="message success" style={{ marginTop: 8, fontSize: "0.85rem" }}>{supabaseMessage}</p>}
               </>
@@ -768,31 +801,23 @@ function AccountSection() {
 
   if (!user) return null;
 
+  const accountName = user.user?.name || "-";
   return (
-    <div style={{ display: "grid", gap: 12 }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
-        <div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 2 }}>Name</div>
-          <div style={{ fontWeight: 600 }}>{user.user?.name || "-"}</div>
+    <div className="account-settings-content">
+      <div className="account-settings-top">
+        <div className="account-profile-avatar">{accountName.charAt(0).toUpperCase()}</div>
+        <div className="account-info-grid">
+          <div><span>Name</span><strong>{accountName}</strong></div>
+          <div><span>Email</span><strong dir="ltr">{user.user?.email || "-"}</strong></div>
+          <div><span>Role</span><strong>{user.user?.role || "-"}</strong></div>
+          <div><span>Shop</span><strong>{shop?.name || "-"}</strong></div>
         </div>
-        <div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 2 }}>Email</div>
-          <div style={{ fontWeight: 600, direction: "ltr", textAlign: "left" }}>{user.user?.email || "-"}</div>
-        </div>
-        <div>
-          <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 2 }}>Role</div>
-          <div style={{ fontWeight: 600, textTransform: "capitalize" }}>{user.user?.role || "-"}</div>
-        </div>
-        {shop && (
-          <div>
-            <div style={{ fontSize: 12, color: "var(--muted)", marginBottom: 2 }}>Shop</div>
-            <div style={{ fontWeight: 600 }}>{shop.name}</div>
-          </div>
-        )}
+        <button className="button danger account-logout" onClick={handleLogout} disabled={loggingOut}>
+          <FaSignOutAlt /> {loggingOut ? "Logging out..." : "Logout"}
+        </button>
       </div>
-
-      <form onSubmit={handlePasswordChange} style={{ display: "grid", gap: 10, maxWidth: 480 }}>
-        <h4 style={{ margin: "8px 0 0" }}>Change Password</h4>
+      <form onSubmit={handlePasswordChange} className="account-password-form">
+        <h4>Change Password</h4>
         <label className="form-field"><span>Current password</span><input type="password" autoComplete="current-password" required value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} /></label>
         <label className="form-field"><span>New password</span><input type="password" autoComplete="new-password" minLength={6} required value={newPassword} onChange={(e) => setNewPassword(e.target.value)} /></label>
         <label className="form-field"><span>Confirm new password</span><input type="password" autoComplete="new-password" minLength={6} required value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} /></label>
@@ -800,13 +825,6 @@ function AccountSection() {
         {passwordError && <p className="message error">{passwordError}</p>}
         <button type="submit" className="button primary" disabled={passwordSaving}>{passwordSaving ? "Updating..." : "Update Password"}</button>
       </form>
-
-      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-        <button className="button secondary" onClick={handleLogout} disabled={loggingOut}>
-          <FaSignOutAlt style={{ marginRight: 6 }} />
-          {loggingOut ? "Logging out..." : "Logout"}
-        </button>
-      </div>
     </div>
   );
 }

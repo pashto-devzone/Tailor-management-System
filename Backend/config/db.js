@@ -9,7 +9,8 @@ const { AsyncLocalStorage } = require("async_hooks");
  * Values already present in process.env always win, so a hosting platform's
  * dashboard configuration takes precedence and no .env file is required in
  * production. The local Backend/.env is a development convenience, and is also
- * what the packaged desktop app ships with.
+ * The packaged desktop app must receive production credentials from its
+ * runtime environment or a separately provisioned secure configuration.
  */
 function loadEnvFile() {
   const envPath = path.join(__dirname, "..", ".env");
@@ -122,7 +123,7 @@ function sqliteMigration() {
 }
 
 async function ensurePersonalDbMigrations() {
-  for (const name of ["004_user_supabase_configs.sql", "005_personal_store_id.sql"]) {
+  for (const name of ["004_user_supabase_configs.sql", "005_personal_store_id.sql", "007_central_keepalive_status.sql"]) {
     try {
       const sql = fs.readFileSync(path.join(__dirname, "..", "migrations", name), "utf8");
       await cloudPool.query(sql);
@@ -254,13 +255,14 @@ async function initialize() {
         "The backend cannot start without a PostgreSQL/Supabase connection."
       );
     }
-    cloudPool = new Pool({
+    const newPool = !cloudPool;
+    if (newPool) cloudPool = new Pool({
       connectionString: process.env.DATABASE_URL,
       options: "-c client_encoding=UTF8",
       connectionTimeoutMillis: Number(process.env.PGCONNECT_TIMEOUT_MS || 3000),
       max: Number(process.env.PGPOOL_MAX || 5),
     });
-    watchCloudPool();
+    if (newPool) watchCloudPool();
     await cloudPool.query("SELECT 1");
     cloudOnline = true;
     console.log("[database] PostgreSQL/Supabase connection established");
@@ -319,6 +321,36 @@ async function close() {
   SQL = null;
 }
 
+// Personal database recovery is deliberately per-user; it never changes the
+// central pool's online state and never routes a personal account to central.
+const personalRecoveryTimers = new Map();
+function schedulePersonalRecovery(uid, cfg) {
+  if (personalRecoveryTimers.has(String(uid))) return;
+  const startedAt = Date.now();
+  const attempt = async () => {
+    const age = Date.now() - startedAt;
+    try {
+      const personalDb = require("../services/personalDb");
+      personalDb.invalidateCache(uid);
+      const pool = personalDb.getPool(cfg, uid);
+      await pool.query("SELECT 1");
+      personalRecoveryTimers.delete(String(uid));
+      personalRetryAfter.delete(String(uid));
+      console.log(`[personal-db] recovery succeeded for user ${uid}`);
+      return;
+    } catch (err) {
+      console.warn(`[personal-db] recovery attempt for user ${uid} failed (${err.code || "unknown"})`);
+    }
+    const delay = age < 15 * 60 * 1000 ? 20_000 : 60_000;
+    const timer = setTimeout(attempt, delay);
+    timer.unref?.();
+    personalRecoveryTimers.set(String(uid), timer);
+  };
+  const timer = setTimeout(attempt, 20_000);
+  timer.unref?.();
+  personalRecoveryTimers.set(String(uid), timer);
+}
+
 exports.getUserContext = () => {
   const store = userContextStorage.getStore();
   return store ? store.userId : null;
@@ -330,6 +362,66 @@ function publicDatabaseError(message, status, code) {
   error.code = code;
   error.publicMessage = true;
   return error;
+}
+
+const PERSONAL_DB_MESSAGE = "Your Supabase database is not reachable yet. If you just resumed it, wait a few minutes and press Retry.";
+function friendlyPersonalFailure(err) {
+  try {
+    const result = require("../services/personalDb").categorizeError(err);
+    return publicDatabaseError(result.message, 503, `personal_db_${result.code}`);
+  } catch (_) {
+    return publicDatabaseError(PERSONAL_DB_MESSAGE, 503, "personal_db_unavailable");
+  }
+}
+const personalStoreCache = new Map();
+const personalRetryAfter = new Map();
+const personalStoreCacheMs = 3 * 60 * 1000;
+
+function isPersonalConnectionError(err) {
+  return /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|ECONNRESET|57P01|terminating connection|connection terminated|tenant or user not found|pooler|startup|authentication/i.test(`${err?.code || ""} ${err?.message || ""}`);
+}
+
+async function resolvePersonalStore(pool, uid) {
+  const cached = personalStoreCache.get(String(uid));
+  if (cached && cached.expiresAt > Date.now()) return cached.store;
+  const model = require("../models/userSupabaseConfigModel");
+  const user = await prepare("SELECT id, name, email, personal_store_id FROM users WHERE id = ? LIMIT 1").get(uid);
+  let store = user?.personal_store_id ? await require("../services/personalDb").getStoreById(pool, user.personal_store_id) : null;
+  if (!store) {
+    const stores = await require("../services/personalDb").getStores(pool);
+    store = stores[0] || null;
+    if (store) await model.setPersonalStoreId(uid, store.id);
+  }
+  if (!store) throw new Error("No store is available in your personal database.");
+  personalStoreCache.set(String(uid), { store, expiresAt: Date.now() + personalStoreCacheMs });
+  return store;
+}
+
+async function getPersonalOperational(uid, cfg) {
+  const personalDb = require("../services/personalDb");
+  if ((personalRetryAfter.get(String(uid)) || 0) > Date.now()) {
+    throw publicDatabaseError(PERSONAL_DB_MESSAGE, 503, "personal_db_unavailable");
+  }
+  let pool = personalDb.getPool(cfg, uid);
+  try {
+    const store = await resolvePersonalStore(pool, uid);
+    return { pool, personal: true, uid, cfg, storeId: store.id };
+  } catch (err) {
+    if (!isPersonalConnectionError(err)) throw err;
+    schedulePersonalRecovery(uid, cfg);
+    personalDb.invalidateCache(uid);
+    personalStoreCache.delete(String(uid));
+    personalRetryAfter.set(String(uid), Date.now() + 3000);
+    pool = personalDb.getPool(cfg, uid);
+    try {
+      const store = await resolvePersonalStore(pool, uid);
+      return { pool, personal: true, uid, cfg, storeId: store.id };
+    } catch (retryError) {
+      if (isPersonalConnectionError(retryError)) personalDb.invalidateCache(uid);
+      schedulePersonalRecovery(uid, cfg);
+      throw friendlyPersonalFailure(retryError);
+    }
+  }
 }
 
 async function resolveOperationalPool() {
@@ -350,14 +442,10 @@ async function resolveOperationalPool() {
       try {
         config = await model.getConfigByUserId(uid);
       } catch (err) {
-        if (model.isMissingPersonalDbSchemaError(err)) {
-          console.warn("[db] personal database schema is unavailable; using the central database.");
-          return { pool: cloudPool, personal: false };
-        }
         console.error("[db] personal database configuration lookup failed:", err.message);
         throw publicDatabaseError(
-          "Unable to load your personal database configuration. Please try again.",
-          500,
+          PERSONAL_DB_MESSAGE,
+          503,
           "personal_db_config_error",
         );
       }
@@ -379,14 +467,14 @@ async function resolveOperationalPool() {
           password: decrypt(config.encrypted_password),
           sslMode: config.ssl_mode || "no-verify",
         };
-        return { pool: personalDb.getPool(cfg, uid), personal: true };
+        return await getPersonalOperational(uid, cfg);
       } catch (err) {
         console.warn("[db] personal pool resolution failed:", err.message);
         const decryptionFailed = /ENCRYPTION_KEY|decrypt|encrypted credential/i.test(err.message || "");
         throw publicDatabaseError(
           decryptionFailed
-            ? "Your personal database configuration could not be decrypted. Verify ENCRYPTION_KEY or reconnect it in Settings."
-            : "Your Supabase database is unreachable. Check it is not paused, then try again.",
+          ? "Your personal database configuration could not be decrypted. Verify ENCRYPTION_KEY or reconnect it in Settings."
+            : PERSONAL_DB_MESSAGE,
           503,
           "personal_db_unavailable",
         );
@@ -397,46 +485,67 @@ async function resolveOperationalPool() {
 }
 
 exports.getOperationalPool = async () => (await resolveOperationalPool()).pool;
+exports.resolveOperationalStore = async () => {
+  const operational = await resolveOperationalPool();
+  return operational.personal ? operational.storeId : null;
+};
+exports.resetPersonalDbRetry = (userId) => {
+  personalRetryAfter.delete(String(userId));
+  personalStoreCache.delete(String(userId));
+};
 
 function operationalPrepare(sql) {
   let index = 0;
   const statement = sql.replace(/\?/g, () => `$${++index}`);
+  const centralTables = "users|sessions|password_reset_tokens|user_supabase_configs|stores|admin_users|admin_sessions|admin_activity|admin_activity_log|licenses|license_events|update_events|api_keys|api_key_scopes";
+  const centralOnly = new RegExp(`\\b(?:FROM|JOIN|INTO|UPDATE|DELETE\\s+FROM)\\s+(?:public\\.)?(?:${centralTables})\\b`, "i").test(sql);
   async function resolve() {
     const operational = await resolveOperationalPool();
     if (operational.pool) return { type: "pg", pool: operational.pool, personal: operational.personal };
     if (localDb) return { type: "local" };
     throw new Error("Operational database is unavailable");
   }
-  async function query(pool, personal, params) {
+  async function query(pool, personal, params, uid, cfg) {
     try {
       return await pool.query(statement, params);
     } catch (err) {
       if (!personal) throw err;
-      console.warn("[db] personal database request failed");
-      throw publicDatabaseError(
-        "Your Supabase database is unreachable. Check it is not paused, then try again.",
-        503,
-        "personal_db_unavailable",
-      );
+      if (!isPersonalConnectionError(err)) throw err;
+      const personalDb = require("../services/personalDb");
+      personalDb.invalidateCache(uid);
+      personalStoreCache.delete(String(uid));
+      personalRetryAfter.set(String(uid), Date.now() + 3000);
+      try {
+        const fresh = personalDb.getPool(cfg, uid);
+        await resolvePersonalStore(fresh, uid);
+        return await fresh.query(statement, params);
+      } catch (retryError) {
+        if (isPersonalConnectionError(retryError)) personalDb.invalidateCache(uid);
+        schedulePersonalRecovery(uid, cfg);
+        throw friendlyPersonalFailure(retryError);
+      }
     }
   }
   return {
     async run(...params) {
+      if (centralOnly) return prepare(sql).run(...params);
       const r = await resolve();
       if (r.type === "local") return localPrepare(sql).run(...params);
-      const result = await query(r.pool, r.personal, params);
+      const result = await query(r.pool, r.personal, params, r.uid, r.cfg);
       return { changes: result.rowCount, lastInsertRowid: result.rows[0]?.id == null ? undefined : Number(result.rows[0].id) };
     },
     async get(...params) {
+      if (centralOnly) return prepare(sql).get(...params);
       const r = await resolve();
       if (r.type === "local") return localPrepare(sql).get(...params);
-      const result = await query(r.pool, r.personal, params);
+      const result = await query(r.pool, r.personal, params, r.uid, r.cfg);
       return result.rows[0] || null;
     },
     async all(...params) {
+      if (centralOnly) return prepare(sql).all(...params);
       const r = await resolve();
       if (r.type === "local") return localPrepare(sql).all(...params);
-      const result = await query(r.pool, r.personal, params);
+      const result = await query(r.pool, r.personal, params, r.uid, r.cfg);
       return result.rows;
     },
   };
@@ -444,13 +553,20 @@ function operationalPrepare(sql) {
 
 exports.prepareOperational = operationalPrepare;
 
+// Auth, account configuration, and administration data always belong to the
+// central database, regardless of the request's operational user context.
+const central = { prepare, get: (sql, params = []) => prepare(sql).get(...params), all: (sql, params = []) => prepare(sql).all(...params), run: (sql, params = []) => prepare(sql).run(...params) };
+
 module.exports = {
   initialize,
   close,
   setUserContext: exports.setUserContext,
   getUserContext: exports.getUserContext,
   getOperationalPool: exports.getOperationalPool,
+  resolveOperationalStore: exports.resolveOperationalStore,
+  resetPersonalDbRetry: exports.resetPersonalDbRetry,
   prepare,
+  central,
   prepareOperational: exports.prepareOperational,
   get: (sql, params = []) => prepare(sql).get(...params),
   all: (sql, params = []) => prepare(sql).all(...params),
