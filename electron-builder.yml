@@ -7,12 +7,12 @@ directories:
 files:
   - "electron/**"
   - "Backend/**"
-  # Never ship SQLite artifacts or example env into the packaged app.
-  # PostgreSQL/Supabase is the only database in production.
+  - "Backend/.env"
+  # Ship the backend's runtime environment with the embedded backend. The
+  # installer is a private deployment artifact and must not be redistributed.
   - "!Backend/database/**"
   - "!Backend/**/*.log"
   - "!Backend/.env.example"
-  - "!Backend/.env"
 
   # Frontend runtime
   - "Frontend/dist/**"
@@ -52,8 +52,8 @@ extraResources:
     to: "Backend"
     filter:
       - "**/*"
+      - ".env"
       - "!.env.example"
-      - "!.env"
       - "!node_modules/.cache/**"
       - "!node_modules/nodemon/**"
       - "!database/**"

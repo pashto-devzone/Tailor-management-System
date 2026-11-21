@@ -19,7 +19,9 @@ assert.ok(owner && repo, "GitHub owner and repository are set");
 assert.ok(appId, "stable appId is set");
 assert.ok(artifact?.includes("${version}") && artifact.includes("${ext}"), "installer artifact name includes version and extension");
 assert.match(builder, /target:\s*\r?\n\s*- nsis/m, "Windows installer target is NSIS");
-assert.doesNotMatch(builder, /Backend\\?\.env["']?\s*$/m, "installer configuration does not add Backend/.env as an asset");
+assert.match(builder, /^\s+- "Backend\/\.env"$/m, "the packaged app includes Backend/.env for its embedded backend");
+assert.match(builder, /^\s+- "\.env"$/m, "extraResources explicitly includes Backend/.env");
+assert.doesNotMatch(builder, /!\.env["']?\s*$/m, "extraResources does not exclude the backend runtime env file");
 assert.equal(pkg.version, versionInfo.current, "package version equals version.json current");
 assert.equal(frontPkg.version, pkg.version, "frontend package version equals root package version");
 const remote = pkg.repository?.url?.match(/github\.com[:/]([^/]+)\/([^/.]+)(?:\.git)?$/i);
@@ -30,7 +32,7 @@ assert.equal(owner.toLowerCase(), "pashto-devzone", "release owner is configured
 assert.equal(repo.toLowerCase(), "pashto-devzone", "release repo is the dedicated profile/release repository");
 console.log(`PASS: source repo ${remote[1]}/${remote[2]} is separate from release repo ${owner}/${repo}.`);
 console.log(`PASS: updater config; appId ${appId}, artifact ${artifact}, version ${pkg.version}.`);
-console.log("PASS: NSIS target and required latest.yml/.blockmap-capable publish config are present; Backend/.env is excluded.");
+console.log("PASS: NSIS target and required latest.yml/.blockmap-capable publish config are present; Backend/.env is packaged with the backend.");
 
 const base = `https://api.github.com/repos/${owner}/${repo}`;
 const request = async (url) => fetch(url, { headers: { Accept: "application/vnd.github+json", "User-Agent": "tailor-management-updater-config-check" }, signal: AbortSignal.timeout(7000) });

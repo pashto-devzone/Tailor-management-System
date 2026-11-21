@@ -29,6 +29,14 @@ Node.js >= 18
 `engines.node` in `package.json` declares this. Developed and verified on
 Node 22 LTS.
 
+## Packaged desktop runtime settings
+
+The Electron app embeds the backend and packages `Backend/.env` as a backend
+runtime resource. The backend loads that file from its resolved `Backend`
+directory before initializing database access or authentication. Keep the
+installer and its update artifacts private because they contain these runtime
+credentials. `.env.example` remains excluded from the installer.
+
 ## 3. Install
 
 ```bash
